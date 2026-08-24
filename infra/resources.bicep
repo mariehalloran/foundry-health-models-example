@@ -232,6 +232,17 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2025-02-01' = {
   }
 }
 
+module observability 'observability.bicep' = {
+  name: 'clinical-trial-chat-observability'
+  params: {
+    environmentName: environmentName
+    location: location
+    logAnalyticsWorkspaceName: logAnalytics.name
+    managedIdentityName: managedIdentity.name
+    alertEmailAddress: budgetContactEmail
+  }
+}
+
 resource staticWebApp 'Microsoft.Web/staticSites@2025-03-01' = {
   name: 'azswa${resourceToken}'
   location: location
@@ -614,6 +625,14 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
               name: 'Frontend__AllowedOrigins__0'
               value: 'https://${staticWebApp.properties.defaultHostname}'
             }
+            {
+              name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+              value: observability.outputs.appInsightsConnectionString
+            }
+            {
+              name: 'OTEL_SERVICE_NAME'
+              value: 'clinical-trial-chat-api'
+            }
           ]
           resources: {
             cpu: json('0.25')
@@ -670,3 +689,10 @@ output cosmosEndpoint string = cosmosAccount.properties.documentEndpoint
 output cosmosDatabaseName string = cosmosDatabase.name
 output cosmosContainerName string = cosmosContainer.name
 output cosmosPrivateEndpointName string = cosmosPrivateEndpoint.name
+output appInsightsConnectionString string = observability.outputs.appInsightsConnectionString
+output appInsightsName string = observability.outputs.appInsightsName
+output appInsightsResourceId string = observability.outputs.appInsightsResourceId
+output healthActionGroupName string = observability.outputs.actionGroupName
+output healthActionGroupResourceId string = observability.outputs.actionGroupResourceId
+output logAnalyticsWorkspaceName string = logAnalytics.name
+output logAnalyticsWorkspaceResourceId string = logAnalytics.id

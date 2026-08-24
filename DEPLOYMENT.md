@@ -259,6 +259,113 @@ az containerapp logs show \
   --format text
 ```
 
+## Grant an Azure Health Model access to metrics
+
+Azure platform metrics are collected automatically and do not require diagnostic settings. A `Microsoft.CloudHealth/healthmodels` resource reads those metrics through its managed identity, which needs Azure RBAC access to the monitored resources.
+
+The standalone [`infra/health-model-metrics.bicep`](infra/health-model-metrics.bicep) template grants the existing health model identity the **Monitoring Reader** role on one resource group. It is intentionally separate from the main application Bicep deployment.
+
+Preview the role assignment:
+
+```bash
+resource_group="$(azd env get-value AZURE_RESOURCE_GROUP_NAME)"
+
+az deployment group what-if \
+  --resource-group "$resource_group" \
+  --template-file infra/health-model-metrics.bicep \
+  --parameters \
+    healthModelName="<your-health-model-name>" \
+    healthModelResourceGroupName="<health-model-resource-group>"
+```
+
+Apply it:
+
+```bash
+az deployment group create \
+  --name health-model-metrics-access \
+  --resource-group "$resource_group" \
+  --template-file infra/health-model-metrics.bicep \
+  --parameters \
+    healthModelName="<your-health-model-name>" \
+    healthModelResourceGroupName="<health-model-resource-group>"
+```
+
+The deployment scope is the resource group whose metrics the health model must read. Repeat the deployment for each additional monitored resource group. RBAC changes can take several minutes to propagate before the Health Model UI can read metrics.
+
+### Configure the Foundry entity signals
+
+Review [FOUNDRY_HEALTH_SIGNALS.md](docs/FOUNDRY_HEALTH_SIGNALS.md) before applying the signal template. The signal template performs a full update of the existing Foundry entity, so signals not declared in the template are removed.
+
+Discover the required values without hardcoding resource IDs:
+
+```bash
+resource_group="$(azd env get-value AZURE_RESOURCE_GROUP_NAME)"
+health_model_name="$(
+  az resource list \
+    --resource-group "$resource_group" \
+    --resource-type Microsoft.CloudHealth/healthmodels \
+    --query '[0].name' \
+    --output tsv
+)"
+foundry_resource_id="$(
+  az resource list \
+    --resource-group "$resource_group" \
+    --resource-type Microsoft.CognitiveServices/accounts \
+    --query '[0].id' \
+    --output tsv
+)"
+health_model_resource_id="$(
+  az resource show \
+    --resource-group "$resource_group" \
+    --resource-type Microsoft.CloudHealth/healthmodels \
+    --name "$health_model_name" \
+    --api-version 2026-05-01-preview \
+    --query id \
+    --output tsv
+)"
+foundry_entity_name="$(
+  az rest \
+    --method get \
+    --url "https://management.azure.com${health_model_resource_id}/entities?api-version=2026-05-01-preview" \
+  | jq -r --arg id "$foundry_resource_id" \
+      '.value[] | select(.properties.signalGroups.azureResource.azureResourceId == $id) | .name'
+)"
+model_deployment_name="$(azd env get-value AZURE_OPENAI_DEPLOYMENT)"
+```
+
+Preview the two conservative core signals:
+
+```bash
+az deployment group what-if \
+  --resource-group "$resource_group" \
+  --template-file infra/health-model-foundry-signals.bicep \
+  --parameters \
+    healthModelName="$health_model_name" \
+    foundryEntityName="$foundry_entity_name" \
+    foundryResourceId="$foundry_resource_id" \
+    modelDeploymentName="$model_deployment_name"
+```
+
+Apply only after reviewing the entity replacement:
+
+```bash
+az deployment group create \
+  --name foundry-health-signals \
+  --resource-group "$resource_group" \
+  --template-file infra/health-model-foundry-signals.bicep \
+  --parameters \
+    healthModelName="$health_model_name" \
+    foundryEntityName="$foundry_entity_name" \
+    foundryResourceId="$foundry_resource_id" \
+    modelDeploymentName="$model_deployment_name"
+```
+
+The optional filtered 4xx, 5xx, and 429 signals are disabled by default because a status code that has never occurred can return no series and evaluate as `Unknown`. Enable them after baselining:
+
+```bash
+--parameters includeSparseErrorSignals=true
+```
+
 ## Cost controls
 
 The default infrastructure uses:

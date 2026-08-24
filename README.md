@@ -105,6 +105,7 @@ Azure Static Web Apps serves the frontend and proxies `/api/*` routes to the lin
 ├── DEPLOYMENT.md
 ├── deployment.env.example
 ├── infra/
+│   ├── health-model-metrics.bicep
 │   ├── main.bicep
 │   ├── main.parameters.json
 │   └── resources.bicep
@@ -274,6 +275,12 @@ Example chat request:
   "message": "What happens during a screening visit?"
 }
 ```
+
+## Health Model metric access
+
+Azure platform metrics are collected automatically. If a `Microsoft.CloudHealth/healthmodels` resource reports that it cannot read metrics, grant its managed identity **Monitoring Reader** access to the monitored resource group with the standalone [health-model-metrics.bicep](infra/health-model-metrics.bicep) template. This role assignment is intentionally separate from the main application deployment. See [DEPLOYMENT.md](DEPLOYMENT.md) for preview and deployment commands.
+
+The reviewed Foundry signal catalog, logical derived metrics, starter thresholds, and current entity corrections are documented in [FOUNDRY_HEALTH_SIGNALS.md](docs/FOUNDRY_HEALTH_SIGNALS.md). A separate, opt-in [health-model-foundry-signals.bicep](infra/health-model-foundry-signals.bicep) template encodes the core signals without changing `main.bicep`.
 
 ## Memory and data
 

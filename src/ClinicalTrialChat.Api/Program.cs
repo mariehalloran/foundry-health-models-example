@@ -1,11 +1,14 @@
 using Azure.Core;
 using Azure.Identity;
+using Azure.Monitor.OpenTelemetry.AspNetCore;
 using ClinicalTrialChat.Api.Configuration;
 using ClinicalTrialChat.Api.Endpoints;
 using ClinicalTrialChat.Api.Services;
 using Microsoft.Azure.Cosmos;
 using OpenAI;
 using OpenAI.Chat;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using System.ClientModel.Primitives;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,6 +22,30 @@ var allowedFrontendOrigins = builder.Configuration
     .ToArray();
 
 builder.Services.AddProblemDetails();
+
+var appInsightsConnectionString =
+    builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"];
+if (!string.IsNullOrWhiteSpace(appInsightsConnectionString))
+{
+    var clientId = builder.Configuration["AZURE_CLIENT_ID"];
+    builder.Services
+        .AddOpenTelemetry()
+        .UseAzureMonitor(options =>
+        {
+            options.ConnectionString = appInsightsConnectionString;
+            options.Credential = string.IsNullOrWhiteSpace(clientId)
+                ? new DefaultAzureCredential()
+                : new ManagedIdentityCredential(
+                    ManagedIdentityId.FromUserAssignedClientId(clientId));
+        })
+        .ConfigureResource(resource => resource.AddService(
+            serviceName: "clinical-trial-chat-api",
+            serviceNamespace: "clinical-trial-chat",
+            serviceInstanceId: Environment.MachineName));
+    builder.Services.ConfigureOpenTelemetryTracerProvider(
+        (_, tracing) => tracing.AddSource(ChatTelemetry.ActivitySourceName));
+}
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
