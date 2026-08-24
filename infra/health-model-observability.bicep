@@ -27,59 +27,59 @@ param actionGroupResourceId string
 param authenticationSettingName string = 'systemassigned'
 
 var apiErrorRateQuery = '''
-AppRequests
-| where TimeGenerated > ago(15m)
-| where AppRoleName == "clinical-trial-chat-api"
-| summarize Total = sum(ItemCount), Failed = sumif(ItemCount, Success == false)
-| extend ErrorRateBasisPoints = toint(iff(Total == 0, 0.0, todouble(Failed) / todouble(Total) * 10000.0))
-| project ErrorRateBasisPoints
-| union (print ErrorRateBasisPoints = 0)
+let result = AppRequests
+    | where TimeGenerated > ago(15m)
+    | where AppRoleName endswith "clinical-trial-chat-api"
+    | summarize Total = sum(ItemCount), Failed = sumif(ItemCount, Success == false)
+    | extend ErrorRateBasisPoints = toint(iff(Total == 0, 0.0, todouble(Failed) / todouble(Total) * 10000.0))
+    | project ErrorRateBasisPoints;
+union result, (print ErrorRateBasisPoints = 0)
 | summarize ErrorRateBasisPoints = max(ErrorRateBasisPoints)
 '''
 
 var apiP95DurationQuery = '''
-AppRequests
-| where TimeGenerated > ago(15m)
-| where AppRoleName == "clinical-trial-chat-api"
-| summarize P95DurationMs = toint(coalesce(percentile(DurationMs, 95), 0.0))
-| union (print P95DurationMs = 0)
+let result = AppRequests
+    | where TimeGenerated > ago(15m)
+    | where AppRoleName endswith "clinical-trial-chat-api"
+    | summarize P95DurationMs = toint(coalesce(percentile(DurationMs, 95), 0.0));
+union result, (print P95DurationMs = 0)
 | summarize P95DurationMs = max(P95DurationMs)
 '''
 
 var otelDependencyFailureQuery = '''
-AppDependencies
-| where TimeGenerated > ago(15m)
-| where AppRoleName == "clinical-trial-chat-api"
-| where Name in (
-    "foundry.chat.complete",
-    "conversation.context.read",
-    "conversation.exchange.write",
-    "conversation.history.read",
-    "conversation.history.delete")
-| summarize DependencyFailures = toint(sumif(ItemCount, Success == false))
-| union (print DependencyFailures = 0)
+let result = AppDependencies
+    | where TimeGenerated > ago(15m)
+    | where AppRoleName endswith "clinical-trial-chat-api"
+    | where Name in (
+        "foundry.chat.complete",
+        "conversation.context.read",
+        "conversation.exchange.write",
+        "conversation.history.read",
+        "conversation.history.delete")
+    | summarize DependencyFailures = toint(sumif(ItemCount, Success == false));
+union result, (print DependencyFailures = 0)
 | summarize DependencyFailures = max(DependencyFailures)
 '''
 
 var runtimeConsoleErrorQuery = replace('''
-ContainerAppConsoleLogs_CL
-| where TimeGenerated > ago(15m)
-| where ContainerAppName_s == "{{containerAppName}}"
-| where Stream_s =~ "stderr"
-    or Log_s has "fail:"
-    or Log_s has "Unhandled exception"
-| summarize RuntimeErrors = count()
-| union (print RuntimeErrors = 0)
+let result = ContainerAppConsoleLogs_CL
+    | where TimeGenerated > ago(15m)
+    | where ContainerAppName_s == "{{containerAppName}}"
+    | where Stream_s =~ "stderr"
+        or Log_s has "fail:"
+        or Log_s has "Unhandled exception"
+    | summarize RuntimeErrors = count();
+union result, (print RuntimeErrors = 0)
 | summarize RuntimeErrors = max(RuntimeErrors)
 ''', '{{containerAppName}}', containerAppName)
 
 var ingressServerErrorQuery = replace('''
-ContainerAppHTTPLogs
-| where TimeGenerated > ago(15m)
-| where ContainerAppName == "{{containerAppName}}"
-| where StatusCode >= 500
-| summarize IngressServerErrors = count()
-| union (print IngressServerErrors = 0)
+let result = ContainerAppHTTPLogs
+    | where TimeGenerated > ago(15m)
+    | where ContainerAppName == "{{containerAppName}}"
+    | where StatusCode >= 500
+    | summarize IngressServerErrors = count();
+union result, (print IngressServerErrors = 0)
 | summarize IngressServerErrors = max(IngressServerErrors)
 ''', '{{containerAppName}}', containerAppName)
 

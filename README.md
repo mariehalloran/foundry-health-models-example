@@ -1,6 +1,8 @@
-# Clinical Trial Chatbot on Microsoft Foundry
+# Monitoring Microsoft Foundry with Azure Health Models
 
-A small, end-to-end demonstration of a customer-facing clinical trial chatbot built with Microsoft Foundry. The app answers common, non-medical trial questions, remembers each demo user's recent conversations, and stores every interaction in Azure Cosmos DB.
+This sample project demonstrates how to monitor a Microsoft Foundry workload with Azure Health Models. It uses a customer-facing clinical trial chatbot to show native Azure Monitor metrics, workspace-based Application Insights, OpenTelemetry traces, Log Analytics KQL signals, alerting, and workload-level health rollups across Microsoft Foundry, Azure Container Apps, and Azure Cosmos DB.
+
+The chatbot answers common, non-medical trial questions, remembers each demo user's recent conversations, and stores every interaction in Azure Cosmos DB.
 
 > **Demo only:** This chatbot does not provide medical advice, determine trial eligibility, or replace a study team. Do not enter names, medical record numbers, or other protected health information (PHI).
 
