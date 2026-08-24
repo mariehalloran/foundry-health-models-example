@@ -115,7 +115,7 @@ resource containerAppsSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-07-
   name: 'azsca${resourceToken}'
   parent: virtualNetwork
   properties: {
-    addressPrefix: '10.42.0.0/27'
+    addressPrefix: '10.42.0.0/26'
     delegations: [
       {
         name: 'container-apps-environment'
@@ -131,9 +131,12 @@ resource privateEndpointSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-0
   name: 'azspe${resourceToken}'
   parent: virtualNetwork
   properties: {
-    addressPrefix: '10.42.0.32/27'
+    addressPrefix: '10.42.0.64/27'
     privateEndpointNetworkPolicies: 'Disabled'
   }
+  dependsOn: [
+    containerAppsSubnet
+  ]
 }
 
 resource foundryPrivateDnsZones 'Microsoft.Network/privateDnsZones@2020-06-01' = [
@@ -325,6 +328,7 @@ resource developerFoundryRole 'Microsoft.Authorization/roleAssignments@2022-04-0
   scope: foundry
   properties: {
     principalId: principalId
+    principalType: 'User'
     roleDefinitionId: openAiUserRoleDefinitionId
   }
 }

@@ -43,7 +43,7 @@ flowchart LR
         end
 
         subgraph vnet["Virtual network 10.42.0.0/24"]
-            subgraph acaSubnet["Container Apps subnet /27"]
+            subgraph acaSubnet["Container Apps subnet /26"]
                 env["Container Apps environment<br/>Consumption"]
                 app["Azure Container App<br/>Public HTTPS ingress<br/>0-1 replicas"]
             end
@@ -58,13 +58,13 @@ flowchart LR
         end
 
         subgraph ai["Microsoft Foundry"]
-            account["Foundry account<br/>Public access + local keys disabled"]
+            account["Foundry account<br/>Public network disabled<br/>Local keys disabled"]
             project["Foundry project<br/>Clinical Trial Chatbot"]
             model["Model deployment<br/>gpt-chat-latest 2026-08-06<br/>GlobalStandard, capacity 2"]
         end
 
         subgraph memory["Conversation memory"]
-            cosmos["Azure Cosmos DB<br/>Public access + local keys disabled<br/>Serverless"]
+            cosmos["Azure Cosmos DB<br/>Public network disabled<br/>Local keys disabled<br/>Serverless"]
             database["SQL database"]
             interactions["Interactions container<br/>Partition key: /userId<br/>30-day TTL"]
         end
@@ -122,20 +122,26 @@ The chatbot itself retains public HTTPS ingress so users can reach the demo. Con
 
 ## Deploy to Azure
 
-Authenticate, choose an environment, provision the infrastructure, and deploy the app:
+Authenticate, explicitly select a subscription, create an `azd` environment, and deploy the app:
 
 ```bash
 azd auth login
 az login
-azd init
+
+az account set --subscription "<subscription-name-or-id>"
+azd env new clinical-trial-demo
+azd env set AZURE_SUBSCRIPTION_ID "$(az account show --query id --output tsv)"
+azd env set AZURE_LOCATION eastus2
+azd env set AZURE_PRINCIPAL_ID "$(az ad signed-in-user show --query id --output tsv)"
+azd env set BUDGET_CONTACT_EMAIL "you@example.com"
+
 azd up
 ```
 
-The default location is `eastus2`. Model availability and quota vary by subscription and region. Override the location during environment configuration if necessary:
+The default location is `eastus2`. Model availability and quota vary by subscription and region. Change `AZURE_LOCATION` before `azd up` if necessary:
 
 ```bash
 azd env set AZURE_LOCATION swedencentral
-azd up
 ```
 
 After deployment, `azd` prints the public application URL.
@@ -158,11 +164,11 @@ azd provision
 Export the Bicep outputs shown by `azd env get-values`, then run:
 
 ```bash
-export AZURE_OPENAI_ENDPOINT="https://<foundry-account>.openai.azure.com/"
-export AZURE_OPENAI_DEPLOYMENT="clinical-trial-chat"
-export COSMOS_ENDPOINT="https://<cosmos-account>.documents.azure.com:443/"
-export COSMOS_DATABASE="clinical-trial-chat"
-export COSMOS_CONTAINER="interactions"
+export AZURE_OPENAI_ENDPOINT="$(azd env get-value AZURE_OPENAI_ENDPOINT)"
+export AZURE_OPENAI_DEPLOYMENT="$(azd env get-value AZURE_OPENAI_DEPLOYMENT)"
+export COSMOS_ENDPOINT="$(azd env get-value COSMOS_ENDPOINT)"
+export COSMOS_DATABASE="$(azd env get-value COSMOS_DATABASE)"
+export COSMOS_CONTAINER="$(azd env get-value COSMOS_CONTAINER)"
 
 dotnet run --project src/ClinicalTrialChat.Api
 ```
