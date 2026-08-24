@@ -1,13 +1,9 @@
-using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
 using ClinicalTrialChat.Api.Models;
-using ClinicalTrialChat.Api.Services;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace ClinicalTrialChat.Api.Tests;
 
@@ -21,18 +17,40 @@ public sealed class ApplicationTests : IClassFixture<ClinicalTrialApplicationFac
     }
 
     [Fact]
-    public async Task HomePageAndHealthEndpoint_AreAvailable()
+    public async Task ApiRootAndHealthEndpoints_AreAvailable()
     {
-        var home = await _client.GetStringAsync(
+        var root = await _client.GetFromJsonAsync<ServiceResponse>(
             "/",
             CancellationToken.None);
         var health = await _client.GetFromJsonAsync<HealthResponse>(
             "/health",
             CancellationToken.None);
+        var proxiedHealth = await _client.GetFromJsonAsync<HealthResponse>(
+            "/api/health",
+            CancellationToken.None);
+        var runtime = await _client.GetFromJsonAsync<RuntimeResponse>(
+            "/api/runtime",
+            CancellationToken.None);
 
-        Assert.Contains("TrialGuide", home, StringComparison.Ordinal);
-        Assert.Contains("type=\"module\"", home, StringComparison.Ordinal);
+        Assert.Equal("clinical-trial-chat-api", root?.Service);
         Assert.Equal("healthy", health?.Status);
+        Assert.Equal("healthy", proxiedHealth?.Status);
+        Assert.Equal("local-demo", runtime?.Mode);
+    }
+
+    [Fact]
+    public async Task Api_AllowsConfiguredLocalFrontendOrigin()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Options, "/api/questions");
+        request.Headers.Add("Origin", "http://localhost:5173");
+        request.Headers.Add("Access-Control-Request-Method", "GET");
+
+        var response = await _client.SendAsync(request, CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal(
+            "http://localhost:5173",
+            Assert.Single(response.Headers.GetValues("Access-Control-Allow-Origin")));
     }
 
     [Fact]
@@ -89,6 +107,8 @@ public sealed class ApplicationTests : IClassFixture<ClinicalTrialApplicationFac
     }
 
     private sealed record HealthResponse(string Status);
+
+    private sealed record ServiceResponse(string Service);
 }
 
 public sealed class ClinicalTrialApplicationFactory : WebApplicationFactory<Program>
@@ -99,76 +119,11 @@ public sealed class ClinicalTrialApplicationFactory : WebApplicationFactory<Prog
         {
             configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Foundry:Endpoint"] = "https://example.openai.azure.com/",
-                ["Foundry:Deployment"] = "test-chat",
-                ["Cosmos:Endpoint"] = "https://example.documents.azure.com/",
-                ["Cosmos:Database"] = "test-database",
-                ["Cosmos:Container"] = "test-container"
+                ["LocalDemo:Enabled"] = "true",
+                ["Frontend:AllowedOrigins:0"] = "http://localhost:5173"
             });
         });
-
-        builder.ConfigureServices(services =>
-        {
-            services.RemoveAll<IConversationRepository>();
-            services.RemoveAll<IFoundryChatService>();
-            services.AddSingleton<IConversationRepository, InMemoryConversationRepository>();
-            services.AddSingleton<IFoundryChatService, TestFoundryChatService>();
-        });
     }
 }
 
-internal sealed class InMemoryConversationRepository : IConversationRepository
-{
-    private readonly ConcurrentDictionary<string, List<ConversationMessage>> _messages =
-        new(StringComparer.Ordinal);
-
-    public Task<IReadOnlyList<ConversationMessage>> GetRecentAsync(
-        string userId,
-        int limit,
-        CancellationToken cancellationToken)
-    {
-        var messages = _messages.GetOrAdd(userId, _ => []);
-        lock (messages)
-        {
-            IReadOnlyList<ConversationMessage> result = messages
-                .OrderBy(message => message.CreatedAt)
-                .TakeLast(limit)
-                .ToList();
-            return Task.FromResult(result);
-        }
-    }
-
-    public Task SaveExchangeAsync(
-        ConversationMessage userMessage,
-        ConversationMessage assistantMessage,
-        CancellationToken cancellationToken)
-    {
-        var messages = _messages.GetOrAdd(userMessage.UserId, _ => []);
-        lock (messages)
-        {
-            messages.Add(userMessage);
-            messages.Add(assistantMessage);
-        }
-
-        return Task.CompletedTask;
-    }
-
-    public Task DeleteUserHistoryAsync(
-        string userId,
-        CancellationToken cancellationToken)
-    {
-        _messages.TryRemove(userId, out _);
-        return Task.CompletedTask;
-    }
-}
-
-internal sealed class TestFoundryChatService : IFoundryChatService
-{
-    public Task<string> GetReplyAsync(
-        IReadOnlyList<ConversationMessage> history,
-        string userMessage,
-        CancellationToken cancellationToken) =>
-        Task.FromResult(
-            "Screening commonly checks whether a study may be suitable. " +
-            "Ask the study team which visits and records are required.");
-}
+internal sealed record RuntimeResponse(string Mode);

@@ -1,4 +1,8 @@
 const storageKey = "trialGuideUserId";
+const localApiHostnames = new Set(["localhost", "127.0.0.1"]);
+const apiBaseUrl = localApiHostnames.has(window.location.hostname)
+  ? "http://localhost:5228"
+  : "";
 
 const questionList = document.querySelector("#question-list");
 const messages = document.querySelector("#messages");
@@ -7,6 +11,7 @@ const chatForm = document.querySelector("#chat-form");
 const messageInput = document.querySelector("#message-input");
 const sendButton = document.querySelector("#send-button");
 const forgetButton = document.querySelector("#forget-button");
+const runtimeLabel = document.querySelector("#runtime-label");
 
 let userId = getOrCreateUserId();
 let isSending = false;
@@ -28,7 +33,7 @@ forgetButton.addEventListener("click", async () => {
   setBusy(true, "Deleting your saved conversation...");
 
   try {
-    const response = await fetch(`/api/history/${encodeURIComponent(userId)}`, {
+    const response = await fetch(apiUrl(`/api/history/${encodeURIComponent(userId)}`), {
       method: "DELETE"
     });
 
@@ -53,6 +58,7 @@ async function loadPage() {
   setStatus("Loading your conversation...");
 
   const results = await Promise.allSettled([
+    loadRuntime(),
     loadQuestions(),
     loadHistory()
   ]);
@@ -66,8 +72,20 @@ async function loadPage() {
   setStatus("");
 }
 
+async function loadRuntime() {
+  const response = await fetch(apiUrl("/api/runtime"));
+  if (!response.ok) {
+    throw new Error(await getErrorMessage(response));
+  }
+
+  const runtime = await response.json();
+  runtimeLabel.textContent = runtime.mode === "local-demo"
+    ? "Local demo - canned responses"
+    : "Microsoft Foundry demo";
+}
+
 async function loadQuestions() {
-  const response = await fetch("/api/questions");
+  const response = await fetch(apiUrl("/api/questions"));
   if (!response.ok) {
     throw new Error(await getErrorMessage(response));
   }
@@ -86,7 +104,7 @@ async function loadQuestions() {
 }
 
 async function loadHistory() {
-  const response = await fetch(`/api/history/${encodeURIComponent(userId)}`);
+  const response = await fetch(apiUrl(`/api/history/${encodeURIComponent(userId)}`));
   if (!response.ok) {
     throw new Error(await getErrorMessage(response));
   }
@@ -115,7 +133,7 @@ async function sendMessage(rawMessage) {
   setBusy(true, "TrialGuide is thinking...");
 
   try {
-    const response = await fetch("/api/chat", {
+    const response = await fetch(apiUrl("/api/chat"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -182,6 +200,10 @@ function setBusy(busy, message = "") {
 function setStatus(message, isError = false) {
   status.textContent = message;
   status.classList.toggle("status-error", isError);
+}
+
+function apiUrl(path) {
+  return `${apiBaseUrl}${path}`;
 }
 
 function getOrCreateUserId() {

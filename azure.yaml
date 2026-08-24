@@ -1,5 +1,9 @@
 name: clinical-trial-chat
 services:
+  web:
+    project: ./src/ClinicalTrialChat.Web
+    dist: .
+    host: staticwebapp
   chat:
     project: ./src/ClinicalTrialChat.Api
     language: dotnet

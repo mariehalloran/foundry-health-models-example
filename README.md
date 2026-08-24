@@ -4,6 +4,8 @@ A small, end-to-end demonstration of a customer-facing clinical trial chatbot bu
 
 > **Demo only:** This chatbot does not provide medical advice, determine trial eligibility, or replace a study team. Do not enter names, medical record numbers, or other protected health information (PHI).
 
+See [DEPLOYMENT.md](DEPLOYMENT.md) for verified local-development, Azure deployment, testing, update, logging, and cleanup instructions.
+
 ## What this demonstrates
 
 - A Microsoft Foundry account and project defined with Bicep.
@@ -98,6 +100,7 @@ The chatbot itself retains public HTTPS ingress so users can reach the demo. Con
 ```text
 .
 ├── azure.yaml
+├── DEPLOYMENT.md
 ├── deployment.env.example
 ├── infra/
 │   ├── main.bicep

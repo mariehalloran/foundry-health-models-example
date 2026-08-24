@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta
     http-equiv="Content-Security-Policy"
-    content="default-src 'self'; connect-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'">
+    content="default-src 'self'; connect-src 'self' http://localhost:5228; img-src 'self' data:; script-src 'self'; style-src 'self'">
   <meta name="description" content="A Microsoft Foundry clinical trial education chatbot demo.">
   <title>TrialGuide | Clinical trial questions</title>
   <link rel="stylesheet" href="/styles.css">
@@ -15,7 +15,7 @@
   <main class="app-shell">
     <header class="hero">
       <div>
-        <p class="eyebrow">Microsoft Foundry demo</p>
+        <p id="runtime-label" class="eyebrow">Microsoft Foundry demo</p>
         <h1>TrialGuide</h1>
         <p class="subtitle">Clear, general answers about taking part in clinical trials.</p>
       </div>

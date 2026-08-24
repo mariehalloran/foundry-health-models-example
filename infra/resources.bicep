@@ -232,6 +232,19 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2025-02-01' = {
   }
 }
 
+resource staticWebApp 'Microsoft.Web/staticSites@2025-03-01' = {
+  name: 'azswa${resourceToken}'
+  location: location
+  tags: union(commonTags, {
+    'azd-service-name': 'web'
+  })
+  sku: {
+    name: 'Standard'
+    tier: 'Standard'
+  }
+  properties: {}
+}
+
 resource containerEnvironment 'Microsoft.App/managedEnvironments@2025-01-01' = {
   name: 'azenv${resourceToken}'
   location: location
@@ -531,12 +544,13 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
         allowInsecure: false
         corsPolicy: {
           allowedOrigins: [
-            '*'
+            'https://${staticWebApp.properties.defaultHostname}'
           ]
           allowedMethods: [
             'GET'
             'POST'
             'DELETE'
+            'OPTIONS'
           ]
           allowedHeaders: [
             'content-type'
@@ -596,6 +610,10 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
               name: 'Foundry__MaxOutputTokens'
               value: '600'
             }
+            {
+              name: 'Frontend__AllowedOrigins__0'
+              value: 'https://${staticWebApp.properties.defaultHostname}'
+            }
           ]
           resources: {
             cpu: json('0.25')
@@ -628,8 +646,19 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
   ]
 }
 
+resource staticWebAppBackend 'Microsoft.Web/staticSites/linkedBackends@2025-03-01' = {
+  name: uniqueString(containerApp.id)
+  parent: staticWebApp
+  properties: {
+    backendResourceId: containerApp.id
+    region: location
+  }
+}
+
 output containerAppName string = containerApp.name
-output applicationUrl string = 'https://${containerApp.properties.configuration.ingress.fqdn}'
+output apiUrl string = 'https://${containerApp.properties.configuration.ingress.fqdn}'
+output applicationUrl string = 'https://${staticWebApp.properties.defaultHostname}'
+output staticWebAppName string = staticWebApp.name
 output containerRegistryEndpoint string = containerRegistry.properties.loginServer
 output containerRegistryName string = containerRegistry.name
 output virtualNetworkName string = virtualNetwork.name
