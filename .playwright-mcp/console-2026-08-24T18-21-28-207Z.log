@@ -1,2 +1,0 @@
-[     885ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://azappfxsccbuhgjzpc.calmriver-3e6213ed.eastus2.azurecontainerapps.io/favicon.ico:0
-[    7200ms] [ERROR] Failed to load resource: the server responded with a status of 500 () @ https://azappfxsccbuhgjzpc.calmriver-3e6213ed.eastus2.azurecontainerapps.io/api/chat:0

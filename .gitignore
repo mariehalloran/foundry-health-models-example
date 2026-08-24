@@ -1,5 +1,6 @@
 .azure/
 .idea/
+.playwright-mcp/
 .vscode/
 deployment.env
 **/bin/
