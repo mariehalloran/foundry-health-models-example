@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; connect-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'">
+  <meta name="description" content="A Microsoft Foundry clinical trial education chatbot demo.">
+  <title>TrialGuide | Clinical trial questions</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" type="module"></script>
+</head>
+<body>
+  <main class="app-shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Microsoft Foundry demo</p>
+        <h1>TrialGuide</h1>
+        <p class="subtitle">Clear, general answers about taking part in clinical trials.</p>
+      </div>
+      <button id="forget-button" class="button button-secondary" type="button">
+        Forget me
+      </button>
+    </header>
+
+    <section class="safety-note" aria-labelledby="safety-title">
+      <div class="safety-icon" aria-hidden="true">i</div>
+      <div>
+        <h2 id="safety-title">Educational information only</h2>
+        <p>
+          TrialGuide cannot provide medical advice or determine eligibility.
+          Do not share names, medical record numbers, or other private health information.
+        </p>
+      </div>
+    </section>
+
+    <section class="question-panel" aria-labelledby="questions-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Start here</p>
+          <h2 id="questions-title">Questions people often ask</h2>
+        </div>
+      </div>
+      <div id="question-list" class="question-list" aria-live="polite">
+        <p class="muted">Loading starter questions...</p>
+      </div>
+    </section>
+
+    <section class="chat-panel" aria-labelledby="chat-title">
+      <div class="chat-heading">
+        <div>
+          <p class="eyebrow">Your conversation</p>
+          <h2 id="chat-title">Ask TrialGuide</h2>
+        </div>
+        <span class="memory-badge">Memory on</span>
+      </div>
+
+      <div
+        id="messages"
+        class="messages"
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions">
+      </div>
+
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+
+      <form id="chat-form" class="chat-form">
+        <label for="message-input" class="visually-hidden">Ask a clinical trial question</label>
+        <textarea
+          id="message-input"
+          name="message"
+          rows="2"
+          maxlength="2000"
+          placeholder="Ask a general question about clinical trials..."
+          required></textarea>
+        <button id="send-button" class="button button-primary" type="submit">
+          Send
+        </button>
+      </form>
+      <p class="form-hint">For urgent symptoms, contact local emergency services.</p>
+    </section>
+  </main>
+</body>
+</html>

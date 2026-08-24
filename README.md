@@ -119,7 +119,7 @@ The chatbot itself retains public HTTPS ingress so users can reach the demo. Con
 
 - An Azure subscription with permission to create resources and role assignments.
 - Azure Developer CLI (`azd`) and Azure CLI (`az`).
-- .NET 8 SDK or later for local development.
+- .NET 10 SDK for local development.
 - Access and quota for `gpt-chat-latest` version `2026-08-06` in the selected Azure region.
 - Docker only if you want to build the container locally.
 

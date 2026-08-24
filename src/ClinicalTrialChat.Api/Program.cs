@@ -9,12 +9,11 @@ using OpenAI.Chat;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var foundryOptions = FoundryOptions.FromConfiguration(builder.Configuration);
-var cosmosOptions = CosmosOptions.FromConfiguration(builder.Configuration);
-
 builder.Services.AddProblemDetails();
-builder.Services.AddSingleton(foundryOptions);
-builder.Services.AddSingleton(cosmosOptions);
+builder.Services.AddSingleton(_ =>
+    FoundryOptions.FromConfiguration(builder.Configuration));
+builder.Services.AddSingleton(_ =>
+    CosmosOptions.FromConfiguration(builder.Configuration));
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<TokenCredential>(_ => new DefaultAzureCredential());
 builder.Services.AddSingleton<ChatClient>(services =>
