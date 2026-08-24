@@ -30,6 +30,11 @@ var cosmosDatabaseName = 'azdb${resourceToken}'
 var cosmosContainerName = 'azct${resourceToken}'
 var modelDeploymentName = 'azdep${resourceToken}'
 var memoryRetentionSeconds = memoryRetentionDays * 24 * 60 * 60
+var foundryPrivateDnsZoneNames = [
+  'privatelink.cognitiveservices.azure.com'
+  'privatelink.openai.azure.com'
+  'privatelink.services.ai.azure.com'
+]
 
 resource budget 'Microsoft.Consumption/budgets@2024-08-01' = {
   name: 'azbud${resourceToken}'
@@ -89,6 +94,86 @@ resource budget 'Microsoft.Consumption/budgets@2024-08-01' = {
         contactGroups: []
         locale: 'en-us'
       }
+    }
+  }
+}
+
+resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-07-01' = {
+  name: 'azvn${resourceToken}'
+  location: location
+  tags: commonTags
+  properties: {
+    addressSpace: {
+      addressPrefixes: [
+        '10.42.0.0/24'
+      ]
+    }
+  }
+}
+
+resource containerAppsSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-07-01' = {
+  name: 'azsca${resourceToken}'
+  parent: virtualNetwork
+  properties: {
+    addressPrefix: '10.42.0.0/27'
+    delegations: [
+      {
+        name: 'container-apps-environment'
+        properties: {
+          serviceName: 'Microsoft.App/environments'
+        }
+      }
+    ]
+  }
+}
+
+resource privateEndpointSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-07-01' = {
+  name: 'azspe${resourceToken}'
+  parent: virtualNetwork
+  properties: {
+    addressPrefix: '10.42.0.32/27'
+    privateEndpointNetworkPolicies: 'Disabled'
+  }
+}
+
+resource foundryPrivateDnsZones 'Microsoft.Network/privateDnsZones@2020-06-01' = [
+  for zoneName in foundryPrivateDnsZoneNames: {
+    name: zoneName
+    location: 'global'
+    tags: commonTags
+  }
+]
+
+resource foundryPrivateDnsVnetLinks 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = [
+  for (zoneName, index) in foundryPrivateDnsZoneNames: {
+    name: 'azlnf${resourceToken}'
+    parent: foundryPrivateDnsZones[index]
+    location: 'global'
+    tags: commonTags
+    properties: {
+      registrationEnabled: false
+      virtualNetwork: {
+        id: virtualNetwork.id
+      }
+    }
+  }
+]
+
+resource cosmosPrivateDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = {
+  name: 'privatelink.documents.azure.com'
+  location: 'global'
+  tags: commonTags
+}
+
+resource cosmosPrivateDnsVnetLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = {
+  name: 'azlnc${resourceToken}'
+  parent: cosmosPrivateDnsZone
+  location: 'global'
+  tags: commonTags
+  properties: {
+    registrationEnabled: false
+    virtualNetwork: {
+      id: virtualNetwork.id
     }
   }
 }
@@ -157,6 +242,16 @@ resource containerEnvironment 'Microsoft.App/managedEnvironments@2025-01-01' = {
       }
     }
     zoneRedundant: false
+    vnetConfiguration: {
+      infrastructureSubnetId: containerAppsSubnet.id
+      internal: false
+    }
+    workloadProfiles: [
+      {
+        name: 'Consumption'
+        workloadProfileType: 'Consumption'
+      }
+    ]
   }
 }
 
@@ -175,9 +270,9 @@ resource foundry 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
     allowProjectManagement: true
     customSubDomainName: 'azai${resourceToken}'
     disableLocalAuth: true
-    publicNetworkAccess: 'Enabled'
+    publicNetworkAccess: 'Disabled'
     networkAcls: {
-      defaultAction: 'Allow'
+      defaultAction: 'Deny'
       ipRules: []
       virtualNetworkRules: []
     }
@@ -234,6 +329,43 @@ resource developerFoundryRole 'Microsoft.Authorization/roleAssignments@2022-04-0
   }
 }
 
+resource foundryPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-07-01' = {
+  name: 'azpef${resourceToken}'
+  location: location
+  tags: commonTags
+  properties: {
+    subnet: {
+      id: privateEndpointSubnet.id
+    }
+    privateLinkServiceConnections: [
+      {
+        name: 'foundry-account'
+        properties: {
+          privateLinkServiceId: foundry.id
+          groupIds: [
+            'account'
+          ]
+        }
+      }
+    ]
+  }
+}
+
+resource foundryPrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-07-01' = {
+  name: 'default'
+  parent: foundryPrivateEndpoint
+  properties: {
+    privateDnsZoneConfigs: [
+      for (zoneName, index) in foundryPrivateDnsZoneNames: {
+        name: 'foundry-${index}'
+        properties: {
+          privateDnsZoneId: foundryPrivateDnsZones[index].id
+        }
+      }
+    ]
+  }
+}
+
 resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2025-04-15' = {
   name: 'azcos${resourceToken}'
   location: location
@@ -258,13 +390,11 @@ resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2025-04-15' = {
     ]
     disableLocalAuth: true
     minimalTlsVersion: 'Tls12'
-    publicNetworkAccess: 'Enabled'
-    isVirtualNetworkFilterEnabled: true
-    ipRules: [
-      {
-        ipAddressOrRange: '0.0.0.0'
-      }
-    ]
+    publicNetworkAccess: 'Disabled'
+    networkAclBypass: 'None'
+    isVirtualNetworkFilterEnabled: false
+    ipRules: []
+    virtualNetworkRules: []
   }
 }
 
@@ -332,6 +462,43 @@ resource developerCosmosRole 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssig
   }
 }
 
+resource cosmosPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-07-01' = {
+  name: 'azpec${resourceToken}'
+  location: location
+  tags: commonTags
+  properties: {
+    subnet: {
+      id: privateEndpointSubnet.id
+    }
+    privateLinkServiceConnections: [
+      {
+        name: 'cosmos-nosql'
+        properties: {
+          privateLinkServiceId: cosmosAccount.id
+          groupIds: [
+            'Sql'
+          ]
+        }
+      }
+    ]
+  }
+}
+
+resource cosmosPrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-07-01' = {
+  name: 'default'
+  parent: cosmosPrivateEndpoint
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'cosmos-nosql'
+        properties: {
+          privateDnsZoneId: cosmosPrivateDnsZone.id
+        }
+      }
+    ]
+  }
+}
+
 resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
   name: 'azapp${resourceToken}'
   location: location
@@ -346,6 +513,7 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
   }
   properties: {
     managedEnvironmentId: containerEnvironment.id
+    workloadProfileName: 'Consumption'
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: {
@@ -447,14 +615,19 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
     acrPullRole
     appFoundryRole
     appCosmosRole
+    foundryPrivateDnsZoneGroup
+    cosmosPrivateDnsZoneGroup
   ]
 }
 
 output containerAppName string = containerApp.name
 output applicationUrl string = 'https://${containerApp.properties.configuration.ingress.fqdn}'
+output virtualNetworkName string = virtualNetwork.name
 output foundryEndpoint string = 'https://${foundry.name}.openai.azure.com/'
 output modelDeploymentName string = modelDeployment.name
 output foundryProjectName string = foundryProject.name
+output foundryPrivateEndpointName string = foundryPrivateEndpoint.name
 output cosmosEndpoint string = cosmosAccount.properties.documentEndpoint
 output cosmosDatabaseName string = cosmosDatabase.name
 output cosmosContainerName string = cosmosContainer.name
+output cosmosPrivateEndpointName string = cosmosPrivateEndpoint.name

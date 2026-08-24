@@ -28,22 +28,70 @@ The sample questions are stored in `src/ClinicalTrialChat.Api/Data/sample-questi
 
 ## Architecture
 
-```text
-Browser
-   |
-   v
-Azure Container App (ASP.NET Core)
-   |                         |
-   | managed identity        | managed identity
-   v                         v
-Microsoft Foundry        Azure Cosmos DB
-gpt-chat-latest          users + interactions
-   |
-   v
-Foundry project
+```mermaid
+flowchart LR
+    user["Clinical trial participant<br/>Web browser"]
+    operator["Azure operator<br/>Budget alert recipient"]
+
+    subgraph rg["Azure resource group"]
+        budget["Cost Management budget<br/>$500/month alerts at<br/>50%, 80%, forecast 80%, 100%"]
+
+        subgraph appPlatform["Application platform"]
+            acr["Azure Container Registry<br/>Basic SKU"]
+            identity["User-assigned<br/>managed identity"]
+            logs["Log Analytics workspace<br/>30-day retention<br/>1 GB/day ingestion cap"]
+        end
+
+        subgraph vnet["Virtual network 10.42.0.0/24"]
+            subgraph acaSubnet["Container Apps subnet /27"]
+                env["Container Apps environment<br/>Consumption"]
+                app["Azure Container App<br/>Public HTTPS ingress<br/>0-1 replicas"]
+            end
+
+            subgraph privateSubnet["Private endpoint subnet /27"]
+                foundryPe["Foundry<br/>private endpoint"]
+                cosmosPe["Cosmos DB<br/>private endpoint"]
+            end
+
+            foundryDns["Foundry private DNS<br/>OpenAI + Cognitive Services<br/>+ AI Services"]
+            cosmosDns["Cosmos private DNS<br/>documents.azure.com"]
+        end
+
+        subgraph ai["Microsoft Foundry"]
+            account["Foundry account<br/>Public access + local keys disabled"]
+            project["Foundry project<br/>Clinical Trial Chatbot"]
+            model["Model deployment<br/>gpt-chat-latest 2026-08-06<br/>GlobalStandard, capacity 2"]
+        end
+
+        subgraph memory["Conversation memory"]
+            cosmos["Azure Cosmos DB<br/>Public access + local keys disabled<br/>Serverless"]
+            database["SQL database"]
+            interactions["Interactions container<br/>Partition key: /userId<br/>30-day TTL"]
+        end
+    end
+
+    user -->|"HTTPS chat requests"| app
+    acr -->|"Container image<br/>AcrPull role"| app
+    app -.->|"Uses"| identity
+    identity -->|"Cognitive Services<br/>OpenAI User role"| model
+    identity -->|"Cosmos DB Built-in<br/>Data Contributor role"| interactions
+    app -->|"Private prompt traffic"| foundryPe --> model
+    model -->|"Private response traffic"| foundryPe
+    app -->|"Private read/write traffic"| cosmosPe --> interactions
+    foundryDns -.->|"Private resolution"| app
+    cosmosDns -.->|"Private resolution"| app
+    account --> project
+    account --> model
+    cosmos --> database --> interactions
+    app -->|"Console logs"| env --> logs
+    budget -.->|"Email alerts"| operator
 ```
 
 The browser keeps a random demo user ID in local storage. The API uses that ID as the Cosmos DB partition key, loads a bounded window of recent messages before each model call, and saves both the user's message and the assistant's response. Returning with the same browser demonstrates memory without adding a full identity system.
+
+The application has no stored Azure credentials. Its user-assigned managed identity pulls the container image and accesses both Foundry and Cosmos DB through role assignments. The Container Apps environment is injected into the virtual network. Private DNS resolves the normal service hostnames to private endpoint addresses, and public data-plane access is disabled on both Foundry and Cosmos DB.
+
+The chatbot itself retains public HTTPS ingress so users can reach the demo. Container Registry and Log Analytics are outside the private dependency path. The resource-group budget sends alerts but does **not** automatically stop services; the model capacity, scale-to-zero compute, serverless database, data retention, and logging cap provide additional cost controls.
 
 ## Project layout
 
@@ -52,7 +100,8 @@ The browser keeps a random demo user ID in local storage. The API uses that ID a
 ├── azure.yaml
 ├── infra/
 │   ├── main.bicep
-│   └── main.parameters.json
+│   ├── main.parameters.json
+│   └── resources.bicep
 ├── src/
 │   └── ClinicalTrialChat.Api/
 │       ├── Data/
@@ -93,7 +142,12 @@ After deployment, `azd` prints the public application URL.
 
 ## Run locally against Azure
 
-Provision the Azure resources first:
+After provisioning, Foundry and Cosmos DB reject public network traffic. A normal developer workstation cannot reach them even with valid Azure credentials. Local execution requires both:
+
+- A private route into the deployed virtual network, such as point-to-site VPN or a peered development network.
+- DNS resolution through the linked Azure private DNS zones.
+
+If that private connectivity is available, provision the Azure resources first:
 
 ```bash
 azd auth login
@@ -113,7 +167,7 @@ export COSMOS_CONTAINER="interactions"
 dotnet run --project src/ClinicalTrialChat.Api
 ```
 
-Your signed-in Azure identity needs the **Cognitive Services OpenAI User** role on the Foundry account and the **Cosmos DB Built-in Data Contributor** data-plane role on the Cosmos DB account.
+Your signed-in Azure identity also needs the **Cognitive Services OpenAI User** role on the Foundry account and the **Cosmos DB Built-in Data Contributor** data-plane role on the Cosmos DB account. RBAC alone does not bypass the private network boundary.
 
 Open the URL printed by ASP.NET Core. The same browser remembers its generated demo user ID. Use **Forget me** to delete that user's stored interactions.
 
@@ -171,5 +225,4 @@ azd down --purge
 
 ## Cost notes
 
-This demo creates billable Azure resources, including a model deployment, Azure Container Apps, Azure Container Registry, and Azure Cosmos DB. Cosmos DB is configured for serverless usage and the container app can scale to zero, but model and registry charges may still apply.
-
+This demo creates billable Azure resources, including a model deployment, Azure Container Apps, Azure Container Registry, Azure Cosmos DB, two private endpoints, and four private DNS zones. Cosmos DB is configured for serverless usage and the container app can scale to zero, but model, registry, Private Link, DNS, and data-processing charges may still apply.
