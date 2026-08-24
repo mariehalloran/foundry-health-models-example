@@ -1,0 +1,6 @@
+name: clinical-trial-chat
+services:
+  chat:
+    project: ./src/ClinicalTrialChat.Api
+    language: dotnet
+    host: containerapp

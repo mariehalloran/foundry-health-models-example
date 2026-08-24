@@ -1,0 +1,26 @@
+[
+  {
+    "id": "trial-basics",
+    "text": "What is a clinical trial?"
+  },
+  {
+    "id": "screening",
+    "text": "What happens during a screening visit?"
+  },
+  {
+    "id": "study-team",
+    "text": "What questions should I ask the study team before joining?"
+  },
+  {
+    "id": "leaving",
+    "text": "Can I leave a clinical trial after it starts?"
+  },
+  {
+    "id": "costs",
+    "text": "Who pays for trial-related care?"
+  },
+  {
+    "id": "side-effects",
+    "text": "What should I do if I experience a side effect?"
+  }
+]

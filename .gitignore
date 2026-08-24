@@ -1,0 +1,7 @@
+.azure/
+.idea/
+.vscode/
+**/bin/
+**/obj/
+*.user
+*.suo

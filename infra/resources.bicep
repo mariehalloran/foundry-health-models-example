@@ -1,0 +1,460 @@
+targetScope = 'resourceGroup'
+
+param environmentName string
+param location string
+param principalId string
+param budgetContactEmail string
+param monthlyBudgetAmount int
+param modelCapacity int
+param memoryRetentionDays int
+param budgetStartDate string
+
+var resourceToken = toLower(
+  uniqueString(subscription().id, resourceGroup().id, location, environmentName)
+)
+var commonTags = {
+  'azd-env-name': environmentName
+  application: 'clinical-trial-chat'
+  'cost-control': 'monthly-budget'
+}
+var acrPullRoleDefinitionId = subscriptionResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  '7f951dda-4ed3-4680-a7ca-43fe172d538d'
+)
+var openAiUserRoleDefinitionId = subscriptionResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
+)
+var cosmosDataContributorRoleId = '00000000-0000-0000-0000-000000000002'
+var cosmosDatabaseName = 'azdb${resourceToken}'
+var cosmosContainerName = 'azct${resourceToken}'
+var modelDeploymentName = 'azdep${resourceToken}'
+var memoryRetentionSeconds = memoryRetentionDays * 24 * 60 * 60
+
+resource budget 'Microsoft.Consumption/budgets@2024-08-01' = {
+  name: 'azbud${resourceToken}'
+  properties: {
+    amount: monthlyBudgetAmount
+    category: 'Cost'
+    timeGrain: 'Monthly'
+    timePeriod: {
+      startDate: budgetStartDate
+    }
+    notifications: {
+      Actual50: {
+        enabled: true
+        operator: 'GreaterThanOrEqualTo'
+        threshold: 50
+        thresholdType: 'Actual'
+        contactEmails: [
+          budgetContactEmail
+        ]
+        contactRoles: []
+        contactGroups: []
+        locale: 'en-us'
+      }
+      Actual80: {
+        enabled: true
+        operator: 'GreaterThanOrEqualTo'
+        threshold: 80
+        thresholdType: 'Actual'
+        contactEmails: [
+          budgetContactEmail
+        ]
+        contactRoles: []
+        contactGroups: []
+        locale: 'en-us'
+      }
+      Forecast80: {
+        enabled: true
+        operator: 'GreaterThanOrEqualTo'
+        threshold: 80
+        thresholdType: 'Forecasted'
+        contactEmails: [
+          budgetContactEmail
+        ]
+        contactRoles: []
+        contactGroups: []
+        locale: 'en-us'
+      }
+      Actual100: {
+        enabled: true
+        operator: 'GreaterThanOrEqualTo'
+        threshold: 100
+        thresholdType: 'Actual'
+        contactEmails: [
+          budgetContactEmail
+        ]
+        contactRoles: []
+        contactGroups: []
+        locale: 'en-us'
+      }
+    }
+  }
+}
+
+resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: 'azid${resourceToken}'
+  location: location
+  tags: commonTags
+}
+
+resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
+  name: 'azcr${resourceToken}'
+  location: location
+  tags: commonTags
+  sku: {
+    name: 'Basic'
+  }
+  properties: {
+    adminUserEnabled: false
+    dataEndpointEnabled: false
+    publicNetworkAccess: 'Enabled'
+    zoneRedundancy: 'Disabled'
+  }
+}
+
+resource acrPullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(containerRegistry.id, managedIdentity.id, acrPullRoleDefinitionId)
+  scope: containerRegistry
+  properties: {
+    principalId: managedIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: acrPullRoleDefinitionId
+  }
+}
+
+resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2025-02-01' = {
+  name: 'azlog${resourceToken}'
+  location: location
+  tags: commonTags
+  properties: {
+    sku: {
+      name: 'PerGB2018'
+    }
+    retentionInDays: 30
+    workspaceCapping: {
+      dailyQuotaGb: 1
+    }
+    publicNetworkAccessForIngestion: 'Enabled'
+    publicNetworkAccessForQuery: 'Enabled'
+    features: {
+      enableLogAccessUsingOnlyResourcePermissions: true
+    }
+  }
+}
+
+resource containerEnvironment 'Microsoft.App/managedEnvironments@2025-01-01' = {
+  name: 'azenv${resourceToken}'
+  location: location
+  tags: commonTags
+  properties: {
+    appLogsConfiguration: {
+      destination: 'log-analytics'
+      logAnalyticsConfiguration: {
+        customerId: logAnalytics.properties.customerId
+        sharedKey: logAnalytics.listKeys().primarySharedKey
+      }
+    }
+    zoneRedundant: false
+  }
+}
+
+resource foundry 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
+  name: 'azai${resourceToken}'
+  location: location
+  tags: commonTags
+  kind: 'AIServices'
+  sku: {
+    name: 'S0'
+  }
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    allowProjectManagement: true
+    customSubDomainName: 'azai${resourceToken}'
+    disableLocalAuth: true
+    publicNetworkAccess: 'Enabled'
+    networkAcls: {
+      defaultAction: 'Allow'
+      ipRules: []
+      virtualNetworkRules: []
+    }
+  }
+}
+
+resource foundryProject 'Microsoft.CognitiveServices/accounts/projects@2025-06-01' = {
+  name: 'azprj${resourceToken}'
+  parent: foundry
+  location: location
+  tags: commonTags
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    displayName: 'Clinical Trial Chatbot'
+    description: 'Simple Microsoft Foundry demo with per-user conversation memory.'
+  }
+}
+
+resource modelDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
+  name: modelDeploymentName
+  parent: foundry
+  sku: {
+    name: 'GlobalStandard'
+    capacity: modelCapacity
+  }
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: 'gpt-chat-latest'
+      version: '2026-08-06'
+    }
+    versionUpgradeOption: 'NoAutoUpgrade'
+  }
+}
+
+resource appFoundryRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(foundry.id, managedIdentity.id, openAiUserRoleDefinitionId)
+  scope: foundry
+  properties: {
+    principalId: managedIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: openAiUserRoleDefinitionId
+  }
+}
+
+resource developerFoundryRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(principalId)) {
+  name: guid(foundry.id, principalId, openAiUserRoleDefinitionId)
+  scope: foundry
+  properties: {
+    principalId: principalId
+    roleDefinitionId: openAiUserRoleDefinitionId
+  }
+}
+
+resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2025-04-15' = {
+  name: 'azcos${resourceToken}'
+  location: location
+  tags: commonTags
+  kind: 'GlobalDocumentDB'
+  properties: {
+    databaseAccountOfferType: 'Standard'
+    capabilities: [
+      {
+        name: 'EnableServerless'
+      }
+    ]
+    consistencyPolicy: {
+      defaultConsistencyLevel: 'Session'
+    }
+    locations: [
+      {
+        locationName: location
+        failoverPriority: 0
+        isZoneRedundant: false
+      }
+    ]
+    disableLocalAuth: true
+    minimalTlsVersion: 'Tls12'
+    publicNetworkAccess: 'Enabled'
+    isVirtualNetworkFilterEnabled: true
+    ipRules: [
+      {
+        ipAddressOrRange: '0.0.0.0'
+      }
+    ]
+  }
+}
+
+resource cosmosDatabase 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2025-04-15' = {
+  name: cosmosDatabaseName
+  parent: cosmosAccount
+  properties: {
+    resource: {
+      id: cosmosDatabaseName
+    }
+    options: {}
+  }
+}
+
+resource cosmosContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2025-04-15' = {
+  name: cosmosContainerName
+  parent: cosmosDatabase
+  properties: {
+    resource: {
+      id: cosmosContainerName
+      defaultTtl: memoryRetentionSeconds
+      partitionKey: {
+        paths: [
+          '/userId'
+        ]
+        kind: 'Hash'
+        version: 2
+      }
+      indexingPolicy: {
+        automatic: true
+        indexingMode: 'consistent'
+        includedPaths: [
+          {
+            path: '/*'
+          }
+        ]
+        excludedPaths: [
+          {
+            path: '/content/?'
+          }
+        ]
+      }
+    }
+    options: {}
+  }
+}
+
+resource appCosmosRole 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2025-04-15' = {
+  name: guid(cosmosAccount.id, managedIdentity.id, cosmosDataContributorRoleId)
+  parent: cosmosAccount
+  properties: {
+    principalId: managedIdentity.properties.principalId
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/${cosmosDataContributorRoleId}'
+    scope: cosmosAccount.id
+  }
+}
+
+resource developerCosmosRole 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2025-04-15' = if (!empty(principalId)) {
+  name: guid(cosmosAccount.id, principalId, cosmosDataContributorRoleId)
+  parent: cosmosAccount
+  properties: {
+    principalId: principalId
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/${cosmosDataContributorRoleId}'
+    scope: cosmosAccount.id
+  }
+}
+
+resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
+  name: 'azapp${resourceToken}'
+  location: location
+  tags: union(commonTags, {
+    'azd-service-name': 'chat'
+  })
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${managedIdentity.id}': {}
+    }
+  }
+  properties: {
+    managedEnvironmentId: containerEnvironment.id
+    configuration: {
+      activeRevisionsMode: 'Single'
+      ingress: {
+        external: true
+        targetPort: 8080
+        transport: 'auto'
+        allowInsecure: false
+        corsPolicy: {
+          allowedOrigins: [
+            '*'
+          ]
+          allowedMethods: [
+            'GET'
+            'POST'
+            'DELETE'
+          ]
+          allowedHeaders: [
+            'content-type'
+          ]
+          allowCredentials: false
+          maxAge: 600
+        }
+        traffic: [
+          {
+            latestRevision: true
+            weight: 100
+          }
+        ]
+      }
+      registries: [
+        {
+          server: containerRegistry.properties.loginServer
+          identity: managedIdentity.id
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'chat'
+          image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+          env: [
+            {
+              name: 'ASPNETCORE_URLS'
+              value: 'http://+:8080'
+            }
+            {
+              name: 'AZURE_CLIENT_ID'
+              value: managedIdentity.properties.clientId
+            }
+            {
+              name: 'AZURE_OPENAI_ENDPOINT'
+              value: 'https://${foundry.name}.openai.azure.com/'
+            }
+            {
+              name: 'AZURE_OPENAI_DEPLOYMENT'
+              value: modelDeployment.name
+            }
+            {
+              name: 'COSMOS_ENDPOINT'
+              value: cosmosAccount.properties.documentEndpoint
+            }
+            {
+              name: 'COSMOS_DATABASE'
+              value: cosmosDatabase.name
+            }
+            {
+              name: 'COSMOS_CONTAINER'
+              value: cosmosContainer.name
+            }
+            {
+              name: 'Foundry__MaxOutputTokens'
+              value: '600'
+            }
+          ]
+          resources: {
+            cpu: json('0.25')
+            memory: '0.5Gi'
+          }
+        }
+      ]
+      scale: {
+        minReplicas: 0
+        maxReplicas: 1
+        rules: [
+          {
+            name: 'http-requests'
+            http: {
+              metadata: {
+                concurrentRequests: '20'
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+  dependsOn: [
+    acrPullRole
+    appFoundryRole
+    appCosmosRole
+  ]
+}
+
+output containerAppName string = containerApp.name
+output applicationUrl string = 'https://${containerApp.properties.configuration.ingress.fqdn}'
+output foundryEndpoint string = 'https://${foundry.name}.openai.azure.com/'
+output modelDeploymentName string = modelDeployment.name
+output foundryProjectName string = foundryProject.name
+output cosmosEndpoint string = cosmosAccount.properties.documentEndpoint
+output cosmosDatabaseName string = cosmosDatabase.name
+output cosmosContainerName string = cosmosContainer.name

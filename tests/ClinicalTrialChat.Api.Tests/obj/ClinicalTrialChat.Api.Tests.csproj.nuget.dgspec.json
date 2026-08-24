@@ -57,6 +57,10 @@
             "Microsoft.Azure.Cosmos": {
               "target": "Package",
               "version": "[3.62.1, )"
+            },
+            "Newtonsoft.Json": {
+              "target": "Package",
+              "version": "[13.0.4, )"
             }
           },
           "imports": [
