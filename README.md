@@ -98,10 +98,13 @@ The chatbot itself retains public HTTPS ingress so users can reach the demo. Con
 ```text
 .
 ├── azure.yaml
+├── deployment.env.example
 ├── infra/
 │   ├── main.bicep
 │   ├── main.parameters.json
 │   └── resources.bicep
+├── scripts/
+│   └── configure-azure-context.sh
 ├── src/
 │   └── ClinicalTrialChat.Api/
 │       ├── Data/
@@ -122,27 +125,39 @@ The chatbot itself retains public HTTPS ingress so users can reach the demo. Con
 
 ## Deploy to Azure
 
-Authenticate, explicitly select a subscription, create an `azd` environment, and deploy the app:
+Copy the example configuration and enter your own tenant, subscription, location, identity, and budget email:
 
 ```bash
-azd auth login
-az login
+cp deployment.env.example deployment.env
+```
 
-az account set --subscription "<subscription-name-or-id>"
-azd env new clinical-trial-demo
-azd env set AZURE_SUBSCRIPTION_ID "$(az account show --query id --output tsv)"
-azd env set AZURE_LOCATION eastus2
-azd env set AZURE_PRINCIPAL_ID "$(az ad signed-in-user show --query id --output tsv)"
-azd env set BUDGET_CONTACT_EMAIL "you@example.com"
+Edit `deployment.env`:
 
+```dotenv
+AZURE_ENV_NAME=clinical-trial-demo
+AZURE_TENANT_ID=<your-tenant-guid>
+AZURE_SUBSCRIPTION_ID=<your-subscription-guid>
+AZURE_LOCATION=eastus2
+AZURE_PRINCIPAL_ID=<your-user-object-guid>
+BUDGET_CONTACT_EMAIL=you@example.com
+```
+
+`AZURE_PRINCIPAL_ID` is optional. Leave it empty to skip developer data-plane role assignments. The setup script verifies that Azure CLI selected the configured tenant and subscription, and `azd` stores those values in its local environment before deployment.
+
+Authenticate and import the configuration into an `azd` environment:
+
+```bash
+./scripts/configure-azure-context.sh
+```
+
+Review the values printed by the script. When they are correct, preview and deploy:
+
+```bash
+azd provision --preview
 azd up
 ```
 
-The default location is `eastus2`. Model availability and quota vary by subscription and region. Change `AZURE_LOCATION` before `azd up` if necessary:
-
-```bash
-azd env set AZURE_LOCATION swedencentral
-```
+The example location is `eastus2`. Model availability and quota vary by subscription and region; change `AZURE_LOCATION` in `deployment.env` before running the configuration script if necessary.
 
 After deployment, `azd` prints the public application URL.
 

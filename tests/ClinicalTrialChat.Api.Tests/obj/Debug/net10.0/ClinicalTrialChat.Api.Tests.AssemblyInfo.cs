@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("ClinicalTrialChat.Api.Tests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+66b667ec9d1b70eeed3f5b8035c86e1e1a6fa3b4")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e9114206b32c2815de2ca47bab085aa046501a6e")]
 [assembly: System.Reflection.AssemblyProductAttribute("ClinicalTrialChat.Api.Tests")]
 [assembly: System.Reflection.AssemblyTitleAttribute("ClinicalTrialChat.Api.Tests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

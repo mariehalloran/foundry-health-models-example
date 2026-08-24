@@ -62,6 +62,8 @@ module resources 'resources.bicep' = {
 }
 
 output AZURE_LOCATION string = location
+output AZURE_SUBSCRIPTION_ID string = subscription().subscriptionId
+output AZURE_TENANT_ID string = tenant().tenantId
 output AZURE_RESOURCE_GROUP_NAME string = resourceGroup.name
 output SERVICE_CHAT_RESOURCE_NAME string = resources.outputs.containerAppName
 output APPLICATION_URL string = resources.outputs.applicationUrl
