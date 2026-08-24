@@ -33,7 +33,7 @@ let result = AppRequests
     | summarize Total = sum(ItemCount), Failed = sumif(ItemCount, Success == false)
     | extend ErrorRateBasisPoints = toint(iff(Total == 0, 0.0, todouble(Failed) / todouble(Total) * 10000.0))
     | project ErrorRateBasisPoints;
-union result, (print ErrorRateBasisPoints = 0)
+union result, (print ErrorRateBasisPoints = toint(0))
 | summarize ErrorRateBasisPoints = max(ErrorRateBasisPoints)
 '''
 
@@ -42,7 +42,7 @@ let result = AppRequests
     | where TimeGenerated > ago(15m)
     | where AppRoleName endswith "clinical-trial-chat-api"
     | summarize P95DurationMs = toint(coalesce(percentile(DurationMs, 95), 0.0));
-union result, (print P95DurationMs = 0)
+union result, (print P95DurationMs = toint(0))
 | summarize P95DurationMs = max(P95DurationMs)
 '''
 
@@ -57,7 +57,7 @@ let result = AppDependencies
         "conversation.history.read",
         "conversation.history.delete")
     | summarize DependencyFailures = toint(sumif(ItemCount, Success == false));
-union result, (print DependencyFailures = 0)
+union result, (print DependencyFailures = toint(0))
 | summarize DependencyFailures = max(DependencyFailures)
 '''
 
@@ -69,7 +69,7 @@ let result = ContainerAppConsoleLogs_CL
         or Log_s has "fail:"
         or Log_s has "Unhandled exception"
     | summarize RuntimeErrors = count();
-union result, (print RuntimeErrors = 0)
+union result, (print RuntimeErrors = tolong(0))
 | summarize RuntimeErrors = max(RuntimeErrors)
 ''', '{{containerAppName}}', containerAppName)
 
@@ -79,7 +79,7 @@ let result = ContainerAppHTTPLogs
     | where ContainerAppName == "{{containerAppName}}"
     | where StatusCode >= 500
     | summarize IngressServerErrors = count();
-union result, (print IngressServerErrors = 0)
+union result, (print IngressServerErrors = tolong(0))
 | summarize IngressServerErrors = max(IngressServerErrors)
 ''', '{{containerAppName}}', containerAppName)
 
@@ -157,11 +157,11 @@ resource azureMonitorEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05
             evaluationRules: {
               degradedRule: {
                 operator: 'GreaterThan'
-                threshold: 2000
+                threshold: 15000
               }
               unhealthyRule: {
                 operator: 'GreaterThan'
-                threshold: 5000
+                threshold: 30000
               }
             }
           }
@@ -247,11 +247,11 @@ resource appInsightsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-
             evaluationRules: {
               degradedRule: {
                 operator: 'GreaterThan'
-                threshold: 2000
+                threshold: 15000
               }
               unhealthyRule: {
                 operator: 'GreaterThan'
-                threshold: 5000
+                threshold: 30000
               }
             }
           }
