@@ -4,3 +4,5 @@ services:
     project: ./src/ClinicalTrialChat.Api
     language: dotnet
     host: containerapp
+    docker:
+      remoteBuild: true

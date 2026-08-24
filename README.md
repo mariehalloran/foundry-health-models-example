@@ -161,6 +161,50 @@ The example location is `eastus2`. Model availability and quota vary by subscrip
 
 After deployment, `azd` prints the public application URL.
 
+## Test the deployed app
+
+Get the deployed URL:
+
+```bash
+app_url="$(azd env get-value APPLICATION_URL)"
+echo "$app_url"
+```
+
+Open that URL in a browser, then:
+
+1. Select **What happens during a screening visit?**
+2. Ask **What visit did I ask about?** to confirm the prior turn is remembered.
+3. Reload the page and confirm the same conversation returns from Cosmos DB.
+4. Select **Forget me**, confirm deletion, and reload. The conversation should be empty.
+5. Do not enter names, medical record numbers, or other protected health information.
+
+The Container App can scale to zero. Allow up to a minute for the first request after an idle period.
+
+Run basic API checks from a terminal:
+
+```bash
+curl --fail "$app_url/health"
+curl --fail "$app_url/api/questions"
+
+user_id="demo-$(uuidgen | tr '[:upper:]' '[:lower:]')"
+
+curl --fail \
+  --header "Content-Type: application/json" \
+  --data "{\"userId\":\"$user_id\",\"message\":\"What is a clinical trial?\"}" \
+  "$app_url/api/chat"
+
+curl --fail "$app_url/api/history/$user_id"
+curl --fail --request DELETE "$app_url/api/history/$user_id"
+```
+
+The expected results are:
+
+- `/health` returns `{"status":"healthy"}`.
+- `/api/questions` returns six starter questions.
+- `/api/chat` returns an assistant message.
+- `/api/history/{userId}` returns both user and assistant messages.
+- `DELETE /api/history/{userId}` returns HTTP `204`.
+
 ## Run locally against Azure
 
 After provisioning, Foundry and Cosmos DB reject public network traffic. A normal developer workstation cannot reach them even with valid Azure credentials. Local execution requires both:

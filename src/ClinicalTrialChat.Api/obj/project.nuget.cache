@@ -1,10 +1,9 @@
 {
   "version": 2,
-  "dgSpecHash": "3Eq4qFvOSqY=",
+  "dgSpecHash": "/E8d9vgS8cQ=",
   "success": true,
   "projectFilePath": "/Users/mhalloran/Projects/foundry-chat-agent/src/ClinicalTrialChat.Api/ClinicalTrialChat.Api.csproj",
   "expectedPackageFiles": [
-    "/Users/mhalloran/.nuget/packages/azure.ai.openai/2.1.0/azure.ai.openai.2.1.0.nupkg.sha512",
     "/Users/mhalloran/.nuget/packages/azure.core/1.53.0/azure.core.1.53.0.nupkg.sha512",
     "/Users/mhalloran/.nuget/packages/azure.identity/1.21.0/azure.identity.1.21.0.nupkg.sha512",
     "/Users/mhalloran/.nuget/packages/microsoft.azure.cosmos/3.62.1/microsoft.azure.cosmos.3.62.1.nupkg.sha512",
@@ -15,8 +14,8 @@
     "/Users/mhalloran/.nuget/packages/microsoft.identitymodel.abstractions/8.14.0/microsoft.identitymodel.abstractions.8.14.0.nupkg.sha512",
     "/Users/mhalloran/.nuget/packages/microsoft.win32.systemevents/6.0.0/microsoft.win32.systemevents.6.0.0.nupkg.sha512",
     "/Users/mhalloran/.nuget/packages/newtonsoft.json/13.0.4/newtonsoft.json.13.0.4.nupkg.sha512",
-    "/Users/mhalloran/.nuget/packages/openai/2.1.0/openai.2.1.0.nupkg.sha512",
-    "/Users/mhalloran/.nuget/packages/system.clientmodel/1.10.0/system.clientmodel.1.10.0.nupkg.sha512",
+    "/Users/mhalloran/.nuget/packages/openai/2.13.0/openai.2.13.0.nupkg.sha512",
+    "/Users/mhalloran/.nuget/packages/system.clientmodel/1.14.0/system.clientmodel.1.14.0.nupkg.sha512",
     "/Users/mhalloran/.nuget/packages/system.configuration.configurationmanager/6.0.0/system.configuration.configurationmanager.6.0.0.nupkg.sha512",
     "/Users/mhalloran/.nuget/packages/system.drawing.common/6.0.0/system.drawing.common.6.0.0.nupkg.sha512",
     "/Users/mhalloran/.nuget/packages/system.memory.data/10.0.3/system.memory.data.10.0.3.nupkg.sha512",

@@ -1,0 +1,49 @@
+- main [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - paragraph [ref=e5]: Microsoft Foundry demo
+      - heading "TrialGuide" [level=1] [ref=e6]
+      - paragraph [ref=e7]: Clear, general answers about taking part in clinical trials.
+    - button "Forget me" [ref=e8] [cursor=pointer]
+  - region [ref=e9]:
+    - generic [ref=e10]: i
+    - generic [ref=e11]:
+      - heading "Educational information only" [level=2] [ref=e12]
+      - paragraph [ref=e13]: TrialGuide cannot provide medical advice or determine eligibility. Do not share names, medical record numbers, or other private health information.
+  - region [ref=e14]:
+    - generic [ref=e16]:
+      - paragraph [ref=e17]: Start here
+      - heading "Questions people often ask" [level=2] [ref=e18]
+    - generic [ref=e19]:
+      - button "What is a clinical trial?" [ref=e34] [cursor=pointer]
+      - button "What happens during a screening visit?" [ref=e35] [cursor=pointer]
+      - button "What questions should I ask the study team before joining?" [ref=e36] [cursor=pointer]
+      - button "Can I leave a clinical trial after it starts?" [ref=e37] [cursor=pointer]
+      - button "Who pays for trial-related care?" [ref=e38] [cursor=pointer]
+      - button "What should I do if I experience a side effect?" [ref=e39] [cursor=pointer]
+  - region [ref=e21]:
+    - generic [ref=e22]:
+      - generic [ref=e23]:
+        - paragraph [ref=e24]: Your conversation
+        - heading "Ask TrialGuide" [level=2] [ref=e25]
+      - generic [ref=e26]: Memory on
+    - log [ref=e27]:
+      - article [ref=e40]:
+        - generic [ref=e41]: TrialGuide
+        - text: Hello. I can explain common clinical trial terms and what participants may want to ask a study team. What would you like to know?
+      - article [ref=e42]:
+        - generic [ref=e43]: You
+        - text: What is a clinical trial?
+      - article [ref=e44]:
+        - generic [ref=e45]: You
+        - text: What happens during a screening visit?
+      - article [ref=e46]:
+        - generic [ref=e47]: TrialGuide
+        - text: "A screening visit is used to see whether a clinical trial may be appropriate for you and whether you meet its eligibility criteria. The exact process depends on the study. It commonly includes: - Reviewing the informed-consent form and giving you time to ask questions before you agree to screening procedures. - Discussing your medical history, medications, and relevant past treatments. - A physical exam and measurements such as blood pressure, height, or weight. - Tests required by the study, which might include blood or urine tests, imaging, an ECG, or other assessments. - Reviewing the results against the study's inclusion and exclusion criteria. Screening does not guarantee that you can enroll, and you can decide not to continue. Before sharing information here, avoid names, medical record numbers, or other identifying health information. A useful question for the study team is: “What tests will happen during screening, what are their risks or costs, and when will I learn whether I’m eligible?”"
+    - status [ref=e28]
+    - generic [ref=e29]:
+      - generic [ref=e30]: Ask a clinical trial question
+      - textbox "Ask a clinical trial question" [active] [ref=e31]:
+        - /placeholder: Ask a general question about clinical trials...
+      - button "Send" [ref=e32] [cursor=pointer]
+    - paragraph [ref=e33]: For urgent symptoms, contact local emergency services.

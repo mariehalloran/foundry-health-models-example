@@ -1,11 +1,12 @@
-using Azure.AI.OpenAI;
 using Azure.Core;
 using Azure.Identity;
 using ClinicalTrialChat.Api.Configuration;
 using ClinicalTrialChat.Api.Endpoints;
 using ClinicalTrialChat.Api.Services;
 using Microsoft.Azure.Cosmos;
+using OpenAI;
 using OpenAI.Chat;
+using System.ClientModel.Primitives;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,8 +21,19 @@ builder.Services.AddSingleton<ChatClient>(services =>
 {
     var credential = services.GetRequiredService<TokenCredential>();
     var options = services.GetRequiredService<FoundryOptions>();
-    var client = new AzureOpenAIClient(options.Endpoint, credential);
-    return client.GetChatClient(options.Deployment);
+    var tokenPolicy = new BearerTokenPolicy(
+        credential,
+        "https://ai.azure.com/.default");
+
+#pragma warning disable OPENAI001
+    return new ChatClient(
+        options.Deployment,
+        tokenPolicy,
+        new OpenAIClientOptions
+        {
+            Endpoint = new Uri(options.Endpoint, "openai/v1/")
+        });
+#pragma warning restore OPENAI001
 });
 builder.Services.AddSingleton(services =>
 {

@@ -2,23 +2,6 @@
   "version": 4,
   "targets": {
     "net10.0": {
-      "Azure.AI.OpenAI/2.1.0": {
-        "type": "package",
-        "dependencies": {
-          "Azure.Core": "1.44.1",
-          "OpenAI": "2.1.0"
-        },
-        "compile": {
-          "lib/netstandard2.0/Azure.AI.OpenAI.dll": {
-            "related": ".xml"
-          }
-        },
-        "runtime": {
-          "lib/netstandard2.0/Azure.AI.OpenAI.dll": {
-            "related": ".xml"
-          }
-        }
-      },
       "Azure.Core/1.53.0": {
         "type": "package",
         "dependencies": {
@@ -213,23 +196,26 @@
           }
         }
       },
-      "OpenAI/2.1.0": {
+      "OpenAI/2.13.0": {
         "type": "package",
         "dependencies": {
-          "System.ClientModel": "1.2.1"
+          "System.ClientModel": "1.14.0"
         },
         "compile": {
-          "lib/net6.0/OpenAI.dll": {
+          "lib/net10.0/OpenAI.dll": {
             "related": ".xml"
           }
         },
         "runtime": {
-          "lib/net6.0/OpenAI.dll": {
+          "lib/net10.0/OpenAI.dll": {
             "related": ".xml"
           }
+        },
+        "build": {
+          "buildTransitive/netstandard2.0/OpenAI.targets": {}
         }
       },
-      "System.ClientModel/1.10.0": {
+      "System.ClientModel/1.14.0": {
         "type": "package",
         "dependencies": {
           "System.Memory.Data": "10.0.3"
@@ -379,22 +365,6 @@
     }
   },
   "libraries": {
-    "Azure.AI.OpenAI/2.1.0": {
-      "sha512": "doixr3tcsIcdzbzF9NxKt+6U0NKj6aPeOCPYONPsWjyf3gxVndVJAdjPcVdqeR/3vcRHXRgGnGlv+iXx5jMA4g==",
-      "type": "package",
-      "path": "azure.ai.openai/2.1.0",
-      "files": [
-        ".nupkg.metadata",
-        ".signature.p7s",
-        "CHANGELOG.md",
-        "README.md",
-        "azure.ai.openai.2.1.0.nupkg.sha512",
-        "azure.ai.openai.nuspec",
-        "azureicon.png",
-        "lib/netstandard2.0/Azure.AI.OpenAI.dll",
-        "lib/netstandard2.0/Azure.AI.OpenAI.xml"
-      ]
-    },
     "Azure.Core/1.53.0": {
       "sha512": "x9c/toFMOtRrlTdFuE7rlGCVAduQzWVfKmLz5juj41zJAXEhYD5hluiUyyAEzJ6OxpBnKtiaBztzwpZITAVjtg==",
       "type": "package",
@@ -644,28 +614,32 @@
         "packageIcon.png"
       ]
     },
-    "OpenAI/2.1.0": {
-      "sha512": "zl72nyP4O94ZyEoCLoE8qoc5vp8kSJmRuqR+UdK+jNIjFJGWJYjsb4rAGpMWWRTbPYuk82E8myMJdVQurMLDnQ==",
+    "OpenAI/2.13.0": {
+      "sha512": "fKgWod3UNE+wPkJuLCiWC7FKh3YSEIHa6QK9gKxCVZ4UYsV9+Gwzg4cEDnvVaIiwc00RTwEuhiOn1Rbk4nLjtw==",
       "type": "package",
-      "path": "openai/2.1.0",
+      "path": "openai/2.13.0",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
         "CHANGELOG.md",
+        "ConfigurationSchema.json",
         "OpenAI.png",
         "README.md",
-        "lib/net6.0/OpenAI.dll",
-        "lib/net6.0/OpenAI.xml",
+        "buildTransitive/netstandard2.0/OpenAI.targets",
+        "lib/net10.0/OpenAI.dll",
+        "lib/net10.0/OpenAI.xml",
+        "lib/net8.0/OpenAI.dll",
+        "lib/net8.0/OpenAI.xml",
         "lib/netstandard2.0/OpenAI.dll",
         "lib/netstandard2.0/OpenAI.xml",
-        "openai.2.1.0.nupkg.sha512",
+        "openai.2.13.0.nupkg.sha512",
         "openai.nuspec"
       ]
     },
-    "System.ClientModel/1.10.0": {
-      "sha512": "lBEWs54F5Y5pZ9hC+8z4S/X76957ex+DPk7WecRHlbIHtrPfbRMMlOgI3iDn4Jpb3bSxvBnKaaHoD59auFjlBA==",
+    "System.ClientModel/1.14.0": {
+      "sha512": "yhIJHDW3Hh5kcvhHv3ww1T8qvya06Nlwo/SR/rke4/fHXtyKiqQV/9b/VDhnVI7QUcMnpfvh4pIEFhNsTDLeKQ==",
       "type": "package",
-      "path": "system.clientmodel/1.10.0",
+      "path": "system.clientmodel/1.14.0",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
@@ -686,7 +660,7 @@
         "lib/net9.0/System.ClientModel.xml",
         "lib/netstandard2.0/System.ClientModel.dll",
         "lib/netstandard2.0/System.ClientModel.xml",
-        "system.clientmodel.1.10.0.nupkg.sha512",
+        "system.clientmodel.1.14.0.nupkg.sha512",
         "system.clientmodel.nuspec"
       ]
     },
@@ -873,10 +847,10 @@
   },
   "projectFileDependencyGroups": {
     "net10.0": [
-      "Azure.AI.OpenAI >= 2.1.0",
       "Azure.Identity >= 1.21.0",
       "Microsoft.Azure.Cosmos >= 3.62.1",
-      "Newtonsoft.Json >= 13.0.4"
+      "Newtonsoft.Json >= 13.0.4",
+      "OpenAI >= 2.13.0"
     ]
   },
   "packageFolders": {
@@ -924,10 +898,6 @@
         "framework": "net10.0",
         "targetAlias": "net10.0",
         "dependencies": {
-          "Azure.AI.OpenAI": {
-            "target": "Package",
-            "version": "[2.1.0, )"
-          },
           "Azure.Identity": {
             "target": "Package",
             "version": "[1.21.0, )"
@@ -939,6 +909,10 @@
           "Newtonsoft.Json": {
             "target": "Package",
             "version": "[13.0.4, )"
+          },
+          "OpenAI": {
+            "target": "Package",
+            "version": "[2.13.0, )"
           }
         },
         "imports": [

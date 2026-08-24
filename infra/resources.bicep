@@ -353,6 +353,10 @@ resource foundryPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-07-01' 
       }
     ]
   }
+  dependsOn: [
+    foundryProject
+    modelDeployment
+  ]
 }
 
 resource foundryPrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-07-01' = {
@@ -626,6 +630,8 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
 
 output containerAppName string = containerApp.name
 output applicationUrl string = 'https://${containerApp.properties.configuration.ingress.fqdn}'
+output containerRegistryEndpoint string = containerRegistry.properties.loginServer
+output containerRegistryName string = containerRegistry.name
 output virtualNetworkName string = virtualNetwork.name
 output foundryEndpoint string = 'https://${foundry.name}.openai.azure.com/'
 output modelDeploymentName string = modelDeployment.name
