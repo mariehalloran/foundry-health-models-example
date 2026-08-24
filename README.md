@@ -12,7 +12,7 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for verified local-development, Azure deploym
 - The latest documented GPT chat model, `gpt-chat-latest` version `2026-08-06`, deployed with the `GlobalStandard` SKU.
 - Passwordless access from Azure Container Apps by using managed identity.
 - Per-user conversation memory persisted in Azure Cosmos DB.
-- A simple ASP.NET Core API and browser chat experience.
+- A browser frontend on Azure Static Web Apps with a linked ASP.NET Core API.
 - Starter questions that show the intended clinical trial use cases.
 
 `gpt-chat-latest` version `2026-08-06` is a preview model. It is used because this project intentionally demonstrates the latest chat model. For production or regulated workloads, select an approved generally available model and complete security, privacy, compliance, and clinical review.
@@ -39,6 +39,7 @@ flowchart LR
         budget["Cost Management budget<br/>$500/month alerts at<br/>50%, 80%, forecast 80%, 100%"]
 
         subgraph appPlatform["Application platform"]
+            swa["Azure Static Web Apps<br/>Standard plan<br/>Frontend + /api proxy"]
             acr["Azure Container Registry<br/>Basic SKU"]
             identity["User-assigned<br/>managed identity"]
             logs["Log Analytics workspace<br/>30-day retention<br/>1 GB/day ingestion cap"]
@@ -47,7 +48,7 @@ flowchart LR
         subgraph vnet["Virtual network 10.42.0.0/24"]
             subgraph acaSubnet["Container Apps subnet /26"]
                 env["Container Apps environment<br/>Consumption"]
-                app["Azure Container App<br/>Public HTTPS ingress<br/>0-1 replicas"]
+                app["Azure Container App API<br/>SWA-linked authentication<br/>0-1 replicas"]
             end
 
             subgraph privateSubnet["Private endpoint subnet /27"]
@@ -72,7 +73,8 @@ flowchart LR
         end
     end
 
-    user -->|"HTTPS chat requests"| app
+    user -->|"HTTPS"| swa
+    swa -->|"Same-origin /api proxy"| app
     acr -->|"Container image<br/>AcrPull role"| app
     app -.->|"Uses"| identity
     identity -->|"Cognitive Services<br/>OpenAI User role"| model
@@ -93,7 +95,7 @@ The browser keeps a random demo user ID in local storage. The API uses that ID a
 
 The application has no stored Azure credentials. Its user-assigned managed identity pulls the container image and accesses both Foundry and Cosmos DB through role assignments. The Container Apps environment is injected into the virtual network. Private DNS resolves the normal service hostnames to private endpoint addresses, and public data-plane access is disabled on both Foundry and Cosmos DB.
 
-The chatbot itself retains public HTTPS ingress so users can reach the demo. Container Registry and Log Analytics are outside the private dependency path. The resource-group budget sends alerts but does **not** automatically stop services; the model capacity, scale-to-zero compute, serverless database, data retention, and logging cap provide additional cost controls.
+Azure Static Web Apps serves the frontend and proxies `/api/*` routes to the linked Container App. Linking adds the **Azure Static Web Apps (Linked)** authentication provider so direct anonymous traffic to the Container App is rejected. Container Registry and Log Analytics are outside the private dependency path. The resource-group budget sends alerts but does **not** automatically stop services; the model capacity, scale-to-zero compute, serverless database, data retention, and logging cap provide additional cost controls.
 
 ## Project layout
 
@@ -109,11 +111,15 @@ The chatbot itself retains public HTTPS ingress so users can reach the demo. Con
 ├── scripts/
 │   └── configure-azure-context.sh
 ├── src/
-│   └── ClinicalTrialChat.Api/
-│       ├── Data/
-│       ├── Models/
-│       ├── Services/
-│       └── wwwroot/
+│   ├── ClinicalTrialChat.Api/
+│   │   ├── Data/
+│   │   ├── Models/
+│   │   └── Services/
+│   └── ClinicalTrialChat.Web/
+│       ├── app.js
+│       ├── index.html
+│       ├── staticwebapp.config.json
+│       └── styles.css
 └── tests/
     └── ClinicalTrialChat.Api.Tests/
 ```
@@ -186,7 +192,7 @@ The Container App can scale to zero. Allow up to a minute for the first request 
 Run basic API checks from a terminal:
 
 ```bash
-curl --fail "$app_url/health"
+curl --fail "$app_url/api/health"
 curl --fail "$app_url/api/questions"
 
 user_id="demo-$(uuidgen | tr '[:upper:]' '[:lower:]')"
@@ -202,7 +208,7 @@ curl --fail --request DELETE "$app_url/api/history/$user_id"
 
 The expected results are:
 
-- `/health` returns `{"status":"healthy"}`.
+- `/api/health` returns `{"status":"healthy"}` through the Static Web Apps proxy.
 - `/api/questions` returns six starter questions.
 - `/api/chat` returns an assistant message.
 - `/api/history/{userId}` returns both user and assistant messages.
@@ -232,12 +238,22 @@ export COSMOS_ENDPOINT="$(azd env get-value COSMOS_ENDPOINT)"
 export COSMOS_DATABASE="$(azd env get-value COSMOS_DATABASE)"
 export COSMOS_CONTAINER="$(azd env get-value COSMOS_CONTAINER)"
 
-dotnet run --project src/ClinicalTrialChat.Api
+ASPNETCORE_ENVIRONMENT=Production \
+  dotnet run \
+  --project src/ClinicalTrialChat.Api \
+  --no-launch-profile \
+  --urls http://localhost:5228
 ```
 
 Your signed-in Azure identity also needs the **Cognitive Services OpenAI User** role on the Foundry account and the **Cosmos DB Built-in Data Contributor** data-plane role on the Cosmos DB account. RBAC alone does not bypass the private network boundary.
 
-Open the URL printed by ASP.NET Core. The same browser remembers its generated demo user ID. Use **Forget me** to delete that user's stored interactions.
+In a second terminal, serve the separate frontend:
+
+```bash
+python3 -m http.server 5173 --directory src/ClinicalTrialChat.Web
+```
+
+Open `http://localhost:5173`. The same browser remembers its generated demo user ID. Use **Forget me** to delete that user's stored interactions.
 
 ## API
 
@@ -247,7 +263,8 @@ Open the URL printed by ASP.NET Core. The same browser remembers its generated d
 | `GET` | `/api/history/{userId}` | Returns recent messages for one demo user. |
 | `POST` | `/api/chat` | Sends a message, calls Foundry, and persists both sides of the exchange. |
 | `DELETE` | `/api/history/{userId}` | Deletes the demo user's stored conversation. |
-| `GET` | `/health` | Reports whether the web process is running. |
+| `GET` | `/api/health` | Reports API health through Static Web Apps. |
+| `GET` | `/health` | Reports API health directly inside trusted environments. |
 
 Example chat request:
 
@@ -293,4 +310,4 @@ azd down --purge
 
 ## Cost notes
 
-This demo creates billable Azure resources, including a model deployment, Azure Container Apps, Azure Container Registry, Azure Cosmos DB, two private endpoints, and four private DNS zones. Cosmos DB is configured for serverless usage and the container app can scale to zero, but model, registry, Private Link, DNS, and data-processing charges may still apply.
+This demo creates billable Azure resources, including a Standard Azure Static Web App, model deployment, Azure Container Apps, Azure Container Registry, Azure Cosmos DB, two private endpoints, and four private DNS zones. The Standard Static Web Apps plan is required for the linked Container Apps backend and had a $9/month base retail price in `eastus2` when this project was updated. Cosmos DB is configured for serverless usage and the container app can scale to zero, but model, registry, Private Link, DNS, bandwidth, and data-processing charges may still apply.

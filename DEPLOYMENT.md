@@ -15,6 +15,7 @@ The local demo is the fastest way to work on the website. Use the deployed app w
 For the local demo:
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+- Python 3 or another static-file server for the frontend.
 
 For Azure deployment:
 
@@ -33,22 +34,28 @@ Development mode uses:
 - Canned responses for the standard clinical trial questions.
 - No Azure credentials, subscription, VPN, or database.
 
-From the repository root:
+Start the API from the repository root:
 
 ```bash
 dotnet restore
 dotnet run --project src/ClinicalTrialChat.Api --launch-profile http
 ```
 
+In a second terminal, serve the separate frontend:
+
+```bash
+python3 -m http.server 5173 --directory src/ClinicalTrialChat.Web
+```
+
 Open:
 
 ```text
-http://localhost:5228
+http://localhost:5173
 ```
 
-The page displays **Local demo - canned responses** at the top. Try a starter question, ask what you asked previously, reload the page, and select **Forget me**.
+The frontend calls the local API at `http://localhost:5228`. The page displays **Local demo - canned responses** at the top. Try a starter question, ask what you asked previously, reload the page, and select **Forget me**.
 
-Local memory lasts only while the ASP.NET Core process is running. Stop the website with `Ctrl+C`.
+Local memory lasts only while the ASP.NET Core process is running. Stop both processes with `Ctrl+C`.
 
 ### Run the local demo in Docker
 
@@ -58,12 +65,15 @@ docker build \
   src/ClinicalTrialChat.Api
 
 docker run --rm \
-  --publish 8080:8080 \
+  --publish 5228:8080 \
   --env LocalDemo__Enabled=true \
+  --env Frontend__AllowedOrigins__0=http://localhost:5173 \
   clinical-trial-chat:local
+
+python3 -m http.server 5173 --directory src/ClinicalTrialChat.Web
 ```
 
-Open `http://localhost:8080`.
+Open `http://localhost:5173`.
 
 ## Run automated tests
 
@@ -71,7 +81,7 @@ Open `http://localhost:8080`.
 dotnet test ClinicalTrialChat.slnx
 ```
 
-The tests cover user ID validation, bounded conversation context, the website, starter questions, local chat memory, and deletion.
+The tests cover user ID validation, bounded conversation context, frontend entry points, local CORS, starter questions, local chat memory, and deletion.
 
 ## Configure an Azure environment
 
@@ -127,6 +137,8 @@ The deployment creates:
 
 - Microsoft Foundry account and project.
 - `gpt-chat-latest` model deployment.
+- Standard Azure Static Web App hosting the separate frontend.
+- Static Web Apps linked backend that proxies `/api/*` to Container Apps.
 - Azure Container App and Container Apps environment.
 - Azure Cosmos DB serverless account and conversation container.
 - A virtual network, private endpoints, and private DNS zones.
@@ -135,7 +147,7 @@ The deployment creates:
 - Log Analytics workspace.
 - A monthly Azure budget with alert notifications.
 
-Foundry and Cosmos DB have public network access and local-key authentication disabled. The Container App reaches both services through private endpoints.
+Foundry and Cosmos DB have public network access and local-key authentication disabled. The Container App reaches both services through private endpoints. Static Web Apps linking configures the Container App to accept requests proxied through the Static Web App rather than direct anonymous browser traffic.
 
 ## Test the deployed app
 
@@ -158,7 +170,7 @@ The Container App can scale to zero. The first request after an idle period can 
 Run API smoke tests:
 
 ```bash
-curl --fail "$app_url/health"
+curl --fail "$app_url/api/health"
 curl --fail "$app_url/api/questions"
 
 user_id="demo-$(uuidgen | tr '[:upper:]' '[:lower:]')"
@@ -177,10 +189,17 @@ curl --fail --request DELETE "$app_url/api/history/$user_id"
 When only application code changed:
 
 ```bash
+azd deploy
+```
+
+Deploy just one service when appropriate:
+
+```bash
+azd deploy web
 azd deploy chat
 ```
 
-When Bicep or application code changed:
+When Bicep or either service changed:
 
 ```bash
 azd provision --preview
@@ -218,7 +237,13 @@ ASPNETCORE_ENVIRONMENT=Production \
   --urls http://localhost:5228
 ```
 
-Open `http://localhost:5228`. The page should display **Microsoft Foundry demo**, not the local canned-response label.
+In a second terminal:
+
+```bash
+python3 -m http.server 5173 --directory src/ClinicalTrialChat.Web
+```
+
+Open `http://localhost:5173`. The page should display **Microsoft Foundry demo**, not the local canned-response label.
 
 ## View logs
 
@@ -239,6 +264,7 @@ az containerapp logs show \
 The default infrastructure uses:
 
 - Container Apps scale-to-zero with at most one replica.
+- Standard Static Web Apps, required for the linked Container Apps backend.
 - Cosmos DB serverless.
 - Basic Container Registry.
 - Bounded model capacity and response tokens.
@@ -246,7 +272,7 @@ The default infrastructure uses:
 - A 1 GB/day Log Analytics ingestion cap.
 - A $500 monthly budget with threshold alerts.
 
-Azure budgets send notifications but do not automatically stop resources.
+The Standard Static Web Apps plan had a $9/month base retail price in `eastus2` when this guide was updated. Azure budgets send notifications but do not automatically stop resources.
 
 ## Delete the Azure environment
 
