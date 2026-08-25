@@ -8,8 +8,15 @@ param healthModelName string
 @minLength(3)
 param foundryEntityName string
 
-@description('Full ARM resource ID of the Container App API.')
-param containerAppResourceId string
+@description('Health Model root entity.')
+@minLength(3)
+param rootEntityName string = 'foundry'
+
+@description('Full ARM resource ID of the Microsoft Foundry account.')
+param foundryResourceId string
+
+@description('Foundry model deployment used by this workload.')
+param modelDeploymentName string
 
 @description('Container App name used to scope Log Analytics queries.')
 param containerAppName string
@@ -130,7 +137,7 @@ resource azureMonitorEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05
   name: 'azure-monitor-api'
   parent: healthModel
   properties: {
-    displayName: 'Azure Monitor - Container App'
+    displayName: 'Azure Monitor - Foundry'
     impact: 'Standard'
     icon: {
       iconName: 'Resource'
@@ -142,14 +149,37 @@ resource azureMonitorEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05
     signalGroups: {
       azureResource: {
         authenticationSetting: authenticationSettingName
-        azureResourceId: containerAppResourceId
+        azureResourceId: foundryResourceId
         signals: [
           {
-            name: 'api-response-time'
-            displayName: 'Container App response time'
+            name: 'monitor-foundry-availability'
+            displayName: 'Azure Monitor Foundry availability'
             signalKind: 'AzureResourceMetric'
-            metricNamespace: 'microsoft.app/containerapps'
-            metricName: 'ResponseTime'
+            metricNamespace: 'microsoft.cognitiveservices/accounts'
+            metricName: 'AzureOpenAIAvailabilityRate'
+            dimensionFilter: 'ModelDeploymentName eq \'${modelDeploymentName}\''
+            aggregationType: 'Average'
+            dataUnit: 'Percent'
+            timeGrain: 'PT15M'
+            refreshInterval: 'PT5M'
+            evaluationRules: {
+              degradedRule: {
+                operator: 'LessThan'
+                threshold: 99
+              }
+              unhealthyRule: {
+                operator: 'LessThan'
+                threshold: 95
+              }
+            }
+          }
+          {
+            name: 'monitor-foundry-latency'
+            displayName: 'Azure Monitor Foundry time to last token'
+            signalKind: 'AzureResourceMetric'
+            metricNamespace: 'microsoft.cognitiveservices/accounts'
+            metricName: 'AzureOpenAITTLTInMS'
+            dimensionFilter: 'ModelDeploymentName eq \'${modelDeploymentName}\''
             aggregationType: 'Average'
             dataUnit: 'MilliSeconds'
             timeGrain: 'PT15M'
@@ -157,33 +187,11 @@ resource azureMonitorEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05
             evaluationRules: {
               degradedRule: {
                 operator: 'GreaterThan'
-                threshold: 15000
+                threshold: 5000
               }
               unhealthyRule: {
                 operator: 'GreaterThan'
-                threshold: 30000
-              }
-            }
-          }
-          {
-            name: 'api-server-errors'
-            displayName: 'Container App 5xx responses'
-            signalKind: 'AzureResourceMetric'
-            metricNamespace: 'microsoft.app/containerapps'
-            metricName: 'Requests'
-            dimensionFilter: 'statusCodeCategory eq \'5xx\''
-            aggregationType: 'Total'
-            dataUnit: 'Count'
-            timeGrain: 'PT15M'
-            refreshInterval: 'PT5M'
-            evaluationRules: {
-              degradedRule: {
-                operator: 'GreaterThan'
-                threshold: 0
-              }
-              unhealthyRule: {
-                operator: 'GreaterThan'
-                threshold: 5
+                threshold: 10000
               }
             }
           }
@@ -379,6 +387,16 @@ resource foundryWorkloadRelationship 'Microsoft.CloudHealth/healthmodels/relatio
   }
 }
 
+resource rootFoundryRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
+  name: 'root-to-foundry'
+  parent: healthModel
+  properties: {
+    parentEntityName: rootEntityName
+    childEntityName: foundryEntityName
+    displayName: 'Health Model root to Microsoft Foundry'
+  }
+}
+
 resource workloadAzureMonitorRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
   name: 'workload-to-azure-monitor'
   parent: healthModel
@@ -422,4 +440,4 @@ resource workloadLogAnalyticsRelationship 'Microsoft.CloudHealth/healthmodels/re
 output workloadEntityName string = workloadEntity.name
 output configuredEntityCount int = 5
 output configuredSignalCount int = 7
-output configuredRelationshipCount int = 5
+output configuredRelationshipCount int = 6
