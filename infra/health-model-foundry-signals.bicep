@@ -11,10 +11,6 @@ param foundryEntityName string
 @description('Full ARM resource ID of the Microsoft.CognitiveServices account.')
 param foundryResourceId string
 
-@description('Foundry model deployment used by this application.')
-@minLength(1)
-param modelDeploymentName string
-
 @description('Action group that receives Foundry safety and usage alerts.')
 @minLength(1)
 param actionGroupResourceId string
@@ -25,9 +21,6 @@ param authenticationSettingName string = 'systemassigned'
 @description('Entity display name.')
 param foundryEntityDisplayName string = 'Microsoft Foundry'
 
-@description('Include filtered 4xx, 5xx, and 429 signals. Enable only after each status-code series has emitted data; an absent series can evaluate as Unknown.')
-param includeSparseErrorSignals bool = false
-
 @description('Inference-token count in 15 minutes that degrades the Foundry usage entity.')
 @minValue(1)
 param tokenUsageDegradedThreshold int = 25000
@@ -36,17 +29,15 @@ param tokenUsageDegradedThreshold int = 25000
 @minValue(1)
 param tokenUsageUnhealthyThreshold int = 50000
 
-var deploymentFilter = 'ModelDeploymentName eq \'${modelDeploymentName}\''
 var metricNamespace = 'microsoft.cognitiveservices/accounts'
 
 var coreSignals = [
   {
     name: 'foundry-availability'
-    displayName: 'Foundry deployment availability'
+    displayName: 'Foundry availability'
     signalKind: 'AzureResourceMetric'
     metricNamespace: metricNamespace
     metricName: 'AzureOpenAIAvailabilityRate'
-    dimensionFilter: deploymentFilter
     aggregationType: 'Average'
     dataUnit: 'Percent'
     timeGrain: 'PT15M'
@@ -68,7 +59,6 @@ var coreSignals = [
     signalKind: 'AzureResourceMetric'
     metricNamespace: metricNamespace
     metricName: 'AzureOpenAITTLTInMS'
-    dimensionFilter: deploymentFilter
     aggregationType: 'Average'
     dataUnit: 'MilliSeconds'
     timeGrain: 'PT15M'
@@ -86,75 +76,6 @@ var coreSignals = [
   }
 ]
 
-var sparseErrorSignals = [
-  {
-    name: 'foundry-server-errors'
-    displayName: 'Foundry server errors'
-    signalKind: 'AzureResourceMetric'
-    metricNamespace: metricNamespace
-    metricName: 'AzureOpenAIRequests'
-    dimensionFilter: 'StatusCode eq \'500\' or StatusCode eq \'502\' or StatusCode eq \'503\' or StatusCode eq \'504\' and ${deploymentFilter}'
-    aggregationType: 'Total'
-    dataUnit: 'Count'
-    timeGrain: 'PT15M'
-    refreshInterval: 'PT5M'
-    evaluationRules: {
-      degradedRule: {
-        operator: 'GreaterThan'
-        threshold: 0
-      }
-      unhealthyRule: {
-        operator: 'GreaterThan'
-        threshold: 5
-      }
-    }
-  }
-  {
-    name: 'foundry-throttled-requests'
-    displayName: 'Foundry throttled requests'
-    signalKind: 'AzureResourceMetric'
-    metricNamespace: metricNamespace
-    metricName: 'AzureOpenAIRequests'
-    dimensionFilter: '${deploymentFilter} and StatusCode eq \'429\''
-    aggregationType: 'Total'
-    dataUnit: 'Count'
-    timeGrain: 'PT5M'
-    refreshInterval: 'PT5M'
-    evaluationRules: {
-      degradedRule: {
-        operator: 'GreaterThan'
-        threshold: 0
-      }
-      unhealthyRule: {
-        operator: 'GreaterThan'
-        threshold: 5
-      }
-    }
-  }
-  {
-    name: 'foundry-client-errors'
-    displayName: 'Foundry client integration errors'
-    signalKind: 'AzureResourceMetric'
-    metricNamespace: metricNamespace
-    metricName: 'AzureOpenAIRequests'
-    dimensionFilter: 'StatusCode eq \'400\' or StatusCode eq \'401\' or StatusCode eq \'403\' or StatusCode eq \'404\' or StatusCode eq \'408\' or StatusCode eq \'409\' or StatusCode eq \'422\' and ${deploymentFilter}'
-    aggregationType: 'Total'
-    dataUnit: 'Count'
-    timeGrain: 'PT15M'
-    refreshInterval: 'PT5M'
-    evaluationRules: {
-      degradedRule: {
-        operator: 'GreaterThan'
-        threshold: 2
-      }
-      unhealthyRule: {
-        operator: 'GreaterThan'
-        threshold: 10
-      }
-    }
-  }
-]
-
 var safetySignals = [
   {
     name: 'foundry-harmful-requests'
@@ -162,7 +83,6 @@ var safetySignals = [
     signalKind: 'AzureResourceMetric'
     metricNamespace: metricNamespace
     metricName: 'RAIHarmfulRequests'
-    dimensionFilter: deploymentFilter
     aggregationType: 'Total'
     dataUnit: 'Count'
     timeGrain: 'PT15M'
@@ -184,7 +104,6 @@ var safetySignals = [
     signalKind: 'AzureResourceMetric'
     metricNamespace: metricNamespace
     metricName: 'RAIRejectedRequests'
-    dimensionFilter: deploymentFilter
     aggregationType: 'Total'
     dataUnit: 'Count'
     timeGrain: 'PT15M'
@@ -209,7 +128,6 @@ var usageSignals = [
     signalKind: 'AzureResourceMetric'
     metricNamespace: metricNamespace
     metricName: 'TokenTransaction'
-    dimensionFilter: deploymentFilter
     aggregationType: 'Total'
     dataUnit: 'Count'
     timeGrain: 'PT15M'
@@ -281,10 +199,7 @@ resource azureMonitorEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05
       azureResource: {
         authenticationSetting: authenticationSettingName
         azureResourceId: foundryResourceId
-        signals: concat(
-          coreSignals,
-          includeSparseErrorSignals ? sparseErrorSignals : []
-        )
+        signals: coreSignals
       }
     }
   }
@@ -405,5 +320,5 @@ output azureMonitorEntityResourceId string = azureMonitorEntity.id
 output safetyEntityResourceId string = safetyEntity.id
 output usageEntityResourceId string = usageEntity.id
 output configuredEntityCount int = 4
-output configuredSignalCount int = length(coreSignals) + (includeSparseErrorSignals ? length(sparseErrorSignals) : 0) + length(safetySignals) + length(usageSignals)
+output configuredSignalCount int = length(coreSignals) + length(safetySignals) + length(usageSignals)
 output configuredRelationshipCount int = 3

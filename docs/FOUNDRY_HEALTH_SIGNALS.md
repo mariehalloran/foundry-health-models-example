@@ -16,7 +16,6 @@ The `Microsoft.CloudHealth` API `2026-05-01-preview` also supports:
 
 - Built-in Azure Resource Health on an `azureResource` signal group.
 - Dependency rollup groups.
-- `dimensionFilter` on `AzureResourceMetric`.
 - Static comparison operators and dynamic thresholds.
 - Entity alerts backed by Azure Monitor action groups.
 
@@ -27,7 +26,7 @@ The `Microsoft.CloudHealth` API `2026-05-01-preview` also supports:
 | Metric | Logical meaning | Recommendation |
 | --- | --- | --- |
 | `AzureOpenAIAvailabilityRate` | `(requests - 5xx) / requests` | Core health |
-| `AzureOpenAIRequests` | Request count with deployment and status-code dimensions | Core when filtered |
+| `AzureOpenAIRequests` | Request count with deployment and status-code dimensions | Future KQL-derived rates |
 | `AzureOpenAITTLTInMS` | Time to last token or byte | Core health |
 | `AzureOpenAITimeToResponse` | First response latency | Use for streaming workloads |
 | `AzureOpenAINormalizedTTFTInMS` | Token-normalized first-token latency | Diagnostic only |
@@ -75,8 +74,8 @@ The standalone [health-model-foundry-signals.bicep](../infra/health-model-foundr
 
 | Signal | Metric and filter | Aggregation/window | Degraded | Unhealthy |
 | --- | --- | --- | --- | --- |
-| Deployment availability | `AzureOpenAIAvailabilityRate`, deployment filter | Average / 15m | `< 99%` | `< 95%` |
-| User-perceived model latency | `AzureOpenAITTLTInMS`, deployment filter | Average / 15m | `> 5,000 ms` | `> 10,000 ms` |
+| Foundry availability | `AzureOpenAIAvailabilityRate` | Average / 15m | `< 99%` | `< 95%` |
+| User-perceived model latency | `AzureOpenAITTLTInMS` | Average / 15m | `> 5,000 ms` | `> 10,000 ms` |
 
 The inference entity has standard impact, so its state rolls up through the Foundry account to workload health.
 
@@ -84,8 +83,8 @@ The inference entity has standard impact, so its state rolls up through the Foun
 
 | Signal | Metric and filter | Aggregation/window | Degraded | Unhealthy |
 | --- | --- | --- | --- | --- |
-| Harmful requests | `RAIHarmfulRequests`, deployment filter | Total / 15m | `> 0` | `> 5` |
-| Content-filter blocks | `RAIRejectedRequests`, deployment filter | Total / 15m | `> 0` | `> 10` |
+| Harmful requests | `RAIHarmfulRequests` | Total / 15m | `> 0` | `> 5` |
+| Content-filter blocks | `RAIRejectedRequests` | Total / 15m | `> 0` | `> 10` |
 
 The safety entity has suppressed impact and emits its own Sev3 degraded and Sev2 unhealthy alerts. This keeps safety events visible without treating successful guardrail enforcement as an availability failure.
 
@@ -93,21 +92,17 @@ The safety entity has suppressed impact and emits its own Sev3 degraded and Sev2
 
 | Signal | Metric and filter | Aggregation/window | Degraded | Unhealthy |
 | --- | --- | --- | --- | --- |
-| Inference-token consumption | `TokenTransaction`, deployment filter | Total / 15m | `> 25,000` | `> 50,000` |
+| Inference-token consumption | `TokenTransaction` | Total / 15m | `> 25,000` | `> 50,000` |
 
 The thresholds are starter values and are configurable with `tokenUsageDegradedThreshold` and `tokenUsageUnhealthyThreshold`. The usage entity has suppressed impact and emits its own Sev3 and Sev2 alerts.
 
-### Optional sparse error signals
+### Dimension-filter compatibility
 
-Set `includeSparseErrorSignals=true` only after each filtered status-code series has emitted data. A status code that has never occurred may return no time series and make the signal `Unknown`.
+The deployable signals intentionally aggregate at the Foundry account level. This application provisions one model deployment, so the account-level values are equivalent to deployment-filtered values.
 
-| Signal | Filter | Degraded | Unhealthy |
-| --- | --- | --- | --- |
-| Server errors | 500, 502, 503, 504 | `> 0 / 15m` | `> 5 / 15m` |
-| Throttling | 429 | `> 0 / 5m` | `> 5 / 5m` |
-| Client integration errors | 400, 401, 403, 404, 408, 409, 422 | `> 2 / 15m` | `> 10 / 15m` |
+The `2026-05-01-preview` entity API removed the explicit `dimension` property but retained raw `dimensionFilter` text. Raw expressions such as `ModelDeploymentName eq 'deployment'` work with Azure Monitor metrics, but the Health Model portal editor can't represent them and the preview signal evaluator can report `Unknown`. The template therefore doesn't use raw dimension filters.
 
-These filters use `AzureOpenAIRequests` with `ModelDeploymentName` and `StatusCode` dimensions. Error and throttle rates are preferable once Foundry metrics are exported to Log Analytics and can be queried with a zero guard.
+Status-specific 4xx, 5xx, and 429 signals were removed for the same reason. Availability already captures server-error impact, while application error-rate and OpenTelemetry dependency signals capture failed user requests. Add status-specific rates as zero-guarded KQL signals after exporting `AzureOpenAIRequests` to Log Analytics.
 
 ## Application observability signals
 

@@ -332,7 +332,6 @@ foundry_entity_name="$(
   | jq -r --arg id "$foundry_resource_id" \
       '.value[] | select(.properties.signalGroups.azureResource.azureResourceId == $id) | .name'
 )"
-model_deployment_name="$(azd env get-value AZURE_OPENAI_DEPLOYMENT)"
 action_group_resource_id="$(azd env get-value AZURE_MONITOR_ACTION_GROUP_ID)"
 ```
 
@@ -346,7 +345,6 @@ az deployment group what-if \
     healthModelName="$health_model_name" \
     foundryEntityName="$foundry_entity_name" \
     foundryResourceId="$foundry_resource_id" \
-    modelDeploymentName="$model_deployment_name" \
     actionGroupResourceId="$action_group_resource_id"
 ```
 
@@ -361,15 +359,10 @@ az deployment group create \
     healthModelName="$health_model_name" \
     foundryEntityName="$foundry_entity_name" \
     foundryResourceId="$foundry_resource_id" \
-    modelDeploymentName="$model_deployment_name" \
     actionGroupResourceId="$action_group_resource_id"
 ```
 
-The optional filtered 4xx, 5xx, and 429 signals are disabled by default because a status code that has never occurred can return no series and evaluate as `Unknown`. Enable them after baselining:
-
-```bash
---parameters includeSparseErrorSignals=true
-```
+The template intentionally uses account-level Foundry metrics without `dimensionFilter`. This application provisions one model deployment, so account-level and deployment-level values are equivalent. The `2026-05-01-preview` Health Model API removed the explicit `dimension` property, and raw dimension expressions cannot be represented by the portal editor. Avoid adding raw filters until the preview API and editor support the same filter model.
 
 The usage entity defaults to degraded above 25,000 inference tokens per 15 minutes and unhealthy above 50,000. Override these starter thresholds after baselining:
 
