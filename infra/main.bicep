@@ -11,7 +11,7 @@ param location string = 'eastus2'
 @description('Object ID of the person running azd. Leave empty to skip local-development data-plane roles.')
 param principalId string = ''
 
-@description('Email address that receives Azure Cost Management budget alerts.')
+@description('Email address that receives Azure Cost Management budget and Health Model alerts.')
 @minLength(3)
 param budgetContactEmail string
 

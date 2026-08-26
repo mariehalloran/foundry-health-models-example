@@ -106,6 +106,8 @@ BUDGET_CONTACT_EMAIL=you@example.com
 
 `AZURE_PRINCIPAL_ID` is optional. Set it to your user object ID when you want the Bicep deployment to assign your account the Foundry and Cosmos DB data-plane roles needed for full local-with-Azure testing.
 
+`BUDGET_CONTACT_EMAIL` receives both Cost Management budget notifications and Health Model alerts.
+
 Authenticate and copy these values into the local `azd` environment:
 
 ```bash
@@ -294,7 +296,7 @@ The deployment scope is the resource group whose metrics the health model must r
 
 ### Configure the Foundry entity signals
 
-Review [FOUNDRY_HEALTH_SIGNALS.md](docs/FOUNDRY_HEALTH_SIGNALS.md) before applying the signal template. The signal template performs a full update of the existing Foundry entity, so signals not declared in the template are removed.
+Review [FOUNDRY_HEALTH_SIGNALS.md](docs/FOUNDRY_HEALTH_SIGNALS.md) before applying the signal template. The signal template performs full updates of the existing Foundry entity and its named signal entities, so signals not declared in the template are removed.
 
 Discover the required values without hardcoding resource IDs:
 
@@ -331,9 +333,10 @@ foundry_entity_name="$(
       '.value[] | select(.properties.signalGroups.azureResource.azureResourceId == $id) | .name'
 )"
 model_deployment_name="$(azd env get-value AZURE_OPENAI_DEPLOYMENT)"
+action_group_resource_id="$(azd env get-value AZURE_MONITOR_ACTION_GROUP_ID)"
 ```
 
-Preview the two conservative core signals:
+Preview the Foundry inference, safety, and usage signal branches:
 
 ```bash
 az deployment group what-if \
@@ -343,7 +346,8 @@ az deployment group what-if \
     healthModelName="$health_model_name" \
     foundryEntityName="$foundry_entity_name" \
     foundryResourceId="$foundry_resource_id" \
-    modelDeploymentName="$model_deployment_name"
+    modelDeploymentName="$model_deployment_name" \
+    actionGroupResourceId="$action_group_resource_id"
 ```
 
 Apply only after reviewing the entity replacement:
@@ -357,7 +361,8 @@ az deployment group create \
     healthModelName="$health_model_name" \
     foundryEntityName="$foundry_entity_name" \
     foundryResourceId="$foundry_resource_id" \
-    modelDeploymentName="$model_deployment_name"
+    modelDeploymentName="$model_deployment_name" \
+    actionGroupResourceId="$action_group_resource_id"
 ```
 
 The optional filtered 4xx, 5xx, and 429 signals are disabled by default because a status code that has never occurred can return no series and evaluate as `Unknown`. Enable them after baselining:
@@ -365,6 +370,57 @@ The optional filtered 4xx, 5xx, and 429 signals are disabled by default because 
 ```bash
 --parameters includeSparseErrorSignals=true
 ```
+
+The usage entity defaults to degraded above 25,000 inference tokens per 15 minutes and unhealthy above 50,000. Override these starter thresholds after baselining:
+
+```bash
+--parameters \
+  tokenUsageDegradedThreshold=50000 \
+  tokenUsageUnhealthyThreshold=100000
+```
+
+### Configure workload rollup and application observability
+
+Deploy the layered observability template after the Foundry signal template. It makes the workload depend on Foundry, Application Insights, OpenTelemetry dependencies, and Log Analytics runtime signals. Degraded and unhealthy workload states notify the same action group.
+
+```bash
+container_app_name="$(azd env get-value SERVICE_CHAT_RESOURCE_NAME)"
+app_insights_resource_id="$(azd env get-value APPLICATIONINSIGHTS_RESOURCE_ID)"
+log_analytics_workspace_id="$(azd env get-value LOG_ANALYTICS_WORKSPACE_ID)"
+```
+
+Preview the hierarchy and workload signals:
+
+```bash
+az deployment group what-if \
+  --resource-group "$resource_group" \
+  --template-file infra/health-model-observability.bicep \
+  --parameters \
+    healthModelName="$health_model_name" \
+    foundryEntityName="$foundry_entity_name" \
+    containerAppName="$container_app_name" \
+    appInsightsResourceId="$app_insights_resource_id" \
+    logAnalyticsWorkspaceResourceId="$log_analytics_workspace_id" \
+    actionGroupResourceId="$action_group_resource_id"
+```
+
+Apply after reviewing the relationship corrections:
+
+```bash
+az deployment group create \
+  --name health-model-observability \
+  --resource-group "$resource_group" \
+  --template-file infra/health-model-observability.bicep \
+  --parameters \
+    healthModelName="$health_model_name" \
+    foundryEntityName="$foundry_entity_name" \
+    containerAppName="$container_app_name" \
+    appInsightsResourceId="$app_insights_resource_id" \
+    logAnalyticsWorkspaceResourceId="$log_analytics_workspace_id" \
+    actionGroupResourceId="$action_group_resource_id"
+```
+
+The template retains the original relationship resource names while reversing their parent and child properties. This is intentional: an incremental deployment updates existing relationships in place instead of leaving duplicate relationships or a rollup cycle.
 
 ## Cost controls
 

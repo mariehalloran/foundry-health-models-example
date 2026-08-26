@@ -4,19 +4,13 @@ targetScope = 'resourceGroup'
 @minLength(3)
 param healthModelName string
 
-@description('Existing Foundry account entity that will parent the workload health entity.')
+@description('Existing Foundry account entity that the workload depends on.')
 @minLength(3)
 param foundryEntityName string
 
 @description('Health Model root entity.')
 @minLength(3)
 param rootEntityName string = 'foundry'
-
-@description('Full ARM resource ID of the Microsoft Foundry account.')
-param foundryResourceId string
-
-@description('Foundry model deployment used by this workload.')
-param modelDeploymentName string
 
 @description('Container App name used to scope Log Analytics queries.')
 param containerAppName string
@@ -28,6 +22,7 @@ param appInsightsResourceId string
 param logAnalyticsWorkspaceResourceId string
 
 @description('Action group that receives degraded and unhealthy workload alerts.')
+@minLength(1)
 param actionGroupResourceId string
 
 @description('Existing Health Model authentication setting.')
@@ -105,8 +100,8 @@ resource workloadEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-
       iconName: 'SystemComponent'
     }
     canvasPosition: {
-      x: 20
-      y: 360
+      x: 0
+      y: 200
     }
     alerts: {
       degraded: {
@@ -133,74 +128,6 @@ resource workloadEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-
   }
 }
 
-resource azureMonitorEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-preview' = {
-  name: 'azure-monitor-api'
-  parent: healthModel
-  properties: {
-    displayName: 'Azure Monitor - Foundry'
-    impact: 'Standard'
-    icon: {
-      iconName: 'Resource'
-    }
-    canvasPosition: {
-      x: -360
-      y: 560
-    }
-    signalGroups: {
-      azureResource: {
-        authenticationSetting: authenticationSettingName
-        azureResourceId: foundryResourceId
-        signals: [
-          {
-            name: 'monitor-foundry-availability'
-            displayName: 'Azure Monitor Foundry availability'
-            signalKind: 'AzureResourceMetric'
-            metricNamespace: 'microsoft.cognitiveservices/accounts'
-            metricName: 'AzureOpenAIAvailabilityRate'
-            dimensionFilter: 'ModelDeploymentName eq \'${modelDeploymentName}\''
-            aggregationType: 'Average'
-            dataUnit: 'Percent'
-            timeGrain: 'PT15M'
-            refreshInterval: 'PT5M'
-            evaluationRules: {
-              degradedRule: {
-                operator: 'LessThan'
-                threshold: 99
-              }
-              unhealthyRule: {
-                operator: 'LessThan'
-                threshold: 95
-              }
-            }
-          }
-          {
-            name: 'monitor-foundry-latency'
-            displayName: 'Azure Monitor Foundry time to last token'
-            signalKind: 'AzureResourceMetric'
-            metricNamespace: 'microsoft.cognitiveservices/accounts'
-            metricName: 'AzureOpenAITTLTInMS'
-            dimensionFilter: 'ModelDeploymentName eq \'${modelDeploymentName}\''
-            aggregationType: 'Average'
-            dataUnit: 'MilliSeconds'
-            timeGrain: 'PT15M'
-            refreshInterval: 'PT5M'
-            evaluationRules: {
-              degradedRule: {
-                operator: 'GreaterThan'
-                threshold: 5000
-              }
-              unhealthyRule: {
-                operator: 'GreaterThan'
-                threshold: 10000
-              }
-            }
-          }
-        ]
-      }
-    }
-  }
-}
-
 resource appInsightsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-preview' = {
   name: 'application-insights-api'
   parent: healthModel
@@ -212,7 +139,7 @@ resource appInsightsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-
     }
     canvasPosition: {
       x: -120
-      y: 560
+      y: 420
     }
     signalGroups: {
       azureResource: {
@@ -280,7 +207,7 @@ resource openTelemetryEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-0
     }
     canvasPosition: {
       x: 120
-      y: 560
+      y: 420
     }
     signalGroups: {
       azureLogAnalytics: {
@@ -324,7 +251,7 @@ resource logAnalyticsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05
     }
     canvasPosition: {
       x: 360
-      y: 560
+      y: 420
     }
     signalGroups: {
       azureLogAnalytics: {
@@ -377,33 +304,47 @@ resource logAnalyticsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05
   }
 }
 
-resource foundryWorkloadRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
-  name: 'foundry-to-workload'
+resource alertingEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-preview' = {
+  name: 'azure-monitor-alerting'
   parent: healthModel
   properties: {
-    parentEntityName: foundryEntityName
-    childEntityName: workloadEntity.name
-    displayName: 'Foundry to workload health'
+    displayName: 'Azure Monitor Alerting'
+    impact: 'Suppressed'
+    icon: {
+      iconName: 'Resource'
+    }
+    canvasPosition: {
+      x: 600
+      y: 420
+    }
+    signalGroups: {
+      azureResource: {
+        authenticationSetting: authenticationSettingName
+        azureResourceId: actionGroupResourceId
+      }
+    }
   }
 }
 
-resource rootFoundryRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
+// Keep the original resource names so incremental deployments replace the
+// reversed relationships instead of leaving a cycle in the model.
+resource workloadFoundryRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
+  name: 'foundry-to-workload'
+  parent: healthModel
+  properties: {
+    parentEntityName: workloadEntity.name
+    childEntityName: foundryEntityName
+    displayName: 'Workload to Microsoft Foundry'
+  }
+}
+
+resource rootWorkloadRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
   name: 'root-to-foundry'
   parent: healthModel
   properties: {
     parentEntityName: rootEntityName
-    childEntityName: foundryEntityName
-    displayName: 'Health Model root to Microsoft Foundry'
-  }
-}
-
-resource workloadAzureMonitorRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
-  name: 'workload-to-azure-monitor'
-  parent: healthModel
-  properties: {
-    parentEntityName: workloadEntity.name
-    childEntityName: azureMonitorEntity.name
-    displayName: 'Workload to Azure Monitor'
+    childEntityName: workloadEntity.name
+    displayName: 'Health Model root to workload'
   }
 }
 
@@ -437,7 +378,17 @@ resource workloadLogAnalyticsRelationship 'Microsoft.CloudHealth/healthmodels/re
   }
 }
 
+resource workloadAlertingRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
+  name: 'workload-to-alerting'
+  parent: healthModel
+  properties: {
+    parentEntityName: workloadEntity.name
+    childEntityName: alertingEntity.name
+    displayName: 'Workload to alerting'
+  }
+}
+
 output workloadEntityName string = workloadEntity.name
 output configuredEntityCount int = 5
-output configuredSignalCount int = 7
+output configuredSignalCount int = 5
 output configuredRelationshipCount int = 6

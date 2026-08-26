@@ -107,7 +107,9 @@ Azure Static Web Apps serves the frontend and proxies `/api/*` routes to the lin
 ├── DEPLOYMENT.md
 ├── deployment.env.example
 ├── infra/
+│   ├── health-model-foundry-signals.bicep
 │   ├── health-model-metrics.bicep
+│   ├── health-model-observability.bicep
 │   ├── main.bicep
 │   ├── main.parameters.json
 │   └── resources.bicep
@@ -154,7 +156,7 @@ AZURE_PRINCIPAL_ID=<your-user-object-guid>
 BUDGET_CONTACT_EMAIL=you@example.com
 ```
 
-`AZURE_PRINCIPAL_ID` is optional. Leave it empty to skip developer data-plane role assignments. The setup script verifies that Azure CLI selected the configured tenant and subscription, and `azd` stores those values in its local environment before deployment.
+`AZURE_PRINCIPAL_ID` is optional. Leave it empty to skip developer data-plane role assignments. `BUDGET_CONTACT_EMAIL` receives both Cost Management budget notifications and Health Model alerts. The setup script verifies that Azure CLI selected the configured tenant and subscription, and `azd` stores those values in its local environment before deployment.
 
 Authenticate and import the configuration into an `azd` environment:
 
@@ -282,7 +284,7 @@ Example chat request:
 
 Azure platform metrics are collected automatically. If a `Microsoft.CloudHealth/healthmodels` resource reports that it cannot read metrics, grant its managed identity **Monitoring Reader** access to the monitored resource group with the standalone [health-model-metrics.bicep](infra/health-model-metrics.bicep) template. This role assignment is intentionally separate from the main application deployment. See [DEPLOYMENT.md](DEPLOYMENT.md) for preview and deployment commands.
 
-The reviewed Foundry signal catalog, logical derived metrics, starter thresholds, and current entity corrections are documented in [FOUNDRY_HEALTH_SIGNALS.md](docs/FOUNDRY_HEALTH_SIGNALS.md). A separate, opt-in [health-model-foundry-signals.bicep](infra/health-model-foundry-signals.bicep) template encodes the core signals without changing `main.bicep`.
+The reviewed Foundry signal catalog, logical derived metrics, starter thresholds, and entity hierarchy are documented in [FOUNDRY_HEALTH_SIGNALS.md](docs/FOUNDRY_HEALTH_SIGNALS.md). The opt-in [health-model-foundry-signals.bicep](infra/health-model-foundry-signals.bicep) template configures inference, safety, and token-usage signals. The separate [health-model-observability.bicep](infra/health-model-observability.bicep) template adds workload rollup, Application Insights, OpenTelemetry, Log Analytics, and consolidated workload alerts without changing `main.bicep`.
 
 ## Memory and data
 
