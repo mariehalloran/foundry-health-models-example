@@ -111,11 +111,11 @@ Status-specific 4xx, 5xx, and 429 signals were removed for the same reason. Avai
 | Layer | Signals |
 | --- | --- |
 | Application Insights | API error rate and P95 request duration |
-| OpenTelemetry | Foundry and Cosmos dependency failures |
+| OpenTelemetry | Privacy-safe count of inputs rejected by Foundry content filters |
 | Log Analytics | Container runtime errors and ingress 5xx responses |
 | Alerting | Suppressed action-group entity plus workload and Foundry state alerts |
 
-The application emits custom dependency spans for Foundry and Cosmos operations. These support root-cause diagnosis without duplicating Foundry platform metrics.
+The application emits custom dependency spans for Foundry and Cosmos operations. It also emits the `foundry.content_filter.input_rejections` counter when Foundry rejects an input with `content_filter` or `ResponsibleAIPolicyViolation`. The metric contains no prompt text, user ID, content category, or other high-cardinality attributes.
 
 ## Entity design
 
@@ -124,7 +124,7 @@ Health Model root
 └── Clinical Trial Chat Workload (Standard, workload alerts)
     ├── Microsoft Foundry (Standard, Resource Health, inference, safety, and usage signals)
     ├── Application Insights - API (Standard)
-    ├── OpenTelemetry Dependencies (Standard)
+    ├── OpenTelemetry - Content Safety (Standard)
     ├── Log Analytics - Runtime (Standard)
     └── Azure Monitor Alerting (Suppressed)
 ```

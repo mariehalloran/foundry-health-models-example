@@ -48,19 +48,14 @@ union result, (print P95DurationMs = toint(0))
 | summarize P95DurationMs = max(P95DurationMs)
 '''
 
-var otelDependencyFailureQuery = '''
-let result = AppDependencies
+var otelContentFilterRejectionQuery = '''
+let result = AppMetrics
     | where TimeGenerated > ago(15m)
     | where AppRoleName endswith "clinical-trial-chat-api"
-    | where Name in (
-        "foundry.chat.complete",
-        "conversation.context.read",
-        "conversation.exchange.write",
-        "conversation.history.read",
-        "conversation.history.delete")
-    | summarize DependencyFailures = toint(sumif(ItemCount, Success == false));
-union result, (print DependencyFailures = toint(0))
-| summarize DependencyFailures = max(DependencyFailures)
+    | where Name == "foundry.content_filter.input_rejections"
+    | summarize HarmfulInputRejections = toint(sum(Sum));
+union result, (print HarmfulInputRejections = toint(0))
+| summarize HarmfulInputRejections = max(HarmfulInputRejections)
 '''
 
 var runtimeConsoleErrorQuery = replace('''
@@ -200,7 +195,7 @@ resource openTelemetryEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-0
   name: 'opentelemetry-dependencies'
   parent: healthModel
   properties: {
-    displayName: 'OpenTelemetry Dependencies'
+    displayName: 'OpenTelemetry - Content Safety'
     impact: 'Standard'
     icon: {
       iconName: 'Resource'
@@ -215,11 +210,11 @@ resource openTelemetryEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-0
         logAnalyticsWorkspaceResourceId: logAnalyticsWorkspaceResourceId
         signals: [
           {
-            name: 'otel-dependency-failures'
-            displayName: 'OpenTelemetry dependency failures'
+            name: 'otel-harmful-input-rejections'
+            displayName: 'OpenTelemetry harmful input rejections'
             signalKind: 'LogAnalyticsQuery'
-            queryText: otelDependencyFailureQuery
-            valueColumnName: 'DependencyFailures'
+            queryText: otelContentFilterRejectionQuery
+            valueColumnName: 'HarmfulInputRejections'
             dataUnit: 'Count'
             timeGrain: 'PT15M'
             refreshInterval: 'PT5M'

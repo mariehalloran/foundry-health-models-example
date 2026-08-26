@@ -1,6 +1,7 @@
 using ClinicalTrialChat.Api.Configuration;
 using ClinicalTrialChat.Api.Models;
 using OpenAI.Chat;
+using System.ClientModel;
 
 namespace ClinicalTrialChat.Api.Services;
 
@@ -39,10 +40,21 @@ public sealed class AzureFoundryChatService(
         {
             MaxOutputTokenCount = options.MaxOutputTokens
         };
-        ChatCompletion completion = await chatClient.CompleteChatAsync(
-            messages,
-            completionOptions,
-            cancellationToken);
+        ChatCompletion completion;
+        try
+        {
+            completion = await chatClient.CompleteChatAsync(
+                messages,
+                completionOptions,
+                cancellationToken);
+        }
+        catch (ClientResultException exception)
+            when (FoundryContentFilterDetector.IsInputRejection(exception))
+        {
+            ChatTelemetry.RecordFoundryInputRejection();
+            throw;
+        }
+
         var reply = string.Concat(completion.Content.Select(part => part.Text)).Trim();
 
         if (string.IsNullOrWhiteSpace(reply))

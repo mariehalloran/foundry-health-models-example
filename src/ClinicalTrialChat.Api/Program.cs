@@ -7,6 +7,7 @@ using ClinicalTrialChat.Api.Services;
 using Microsoft.Azure.Cosmos;
 using OpenAI;
 using OpenAI.Chat;
+using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using System.ClientModel.Primitives;
@@ -44,6 +45,8 @@ if (!string.IsNullOrWhiteSpace(appInsightsConnectionString))
             serviceInstanceId: Environment.MachineName));
     builder.Services.ConfigureOpenTelemetryTracerProvider(
         (_, tracing) => tracing.AddSource(ChatTelemetry.ActivitySourceName));
+    builder.Services.ConfigureOpenTelemetryMeterProvider(
+        (_, metrics) => metrics.AddMeter(ChatTelemetry.MeterName));
 }
 
 builder.Services.AddCors(options =>
