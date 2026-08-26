@@ -100,8 +100,8 @@ resource workloadEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-
       iconName: 'SystemComponent'
     }
     canvasPosition: {
-      x: 0
-      y: 200
+      x: 20
+      y: 360
     }
     alerts: {
       degraded: {
@@ -138,8 +138,8 @@ resource appInsightsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-
       iconName: 'AppService'
     }
     canvasPosition: {
-      x: -120
-      y: 420
+      x: -200
+      y: 720
     }
     signalGroups: {
       azureResource: {
@@ -206,8 +206,8 @@ resource openTelemetryEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-0
       iconName: 'Resource'
     }
     canvasPosition: {
-      x: 120
-      y: 420
+      x: 180
+      y: 720
     }
     signalGroups: {
       azureLogAnalytics: {
@@ -250,8 +250,8 @@ resource logAnalyticsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05
       iconName: 'Resource'
     }
     canvasPosition: {
-      x: 360
-      y: 420
+      x: 450
+      y: 560
     }
     signalGroups: {
       azureLogAnalytics: {
