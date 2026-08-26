@@ -296,7 +296,7 @@ The deployment scope is the resource group whose metrics the health model must r
 
 ### Configure the Foundry entity signals
 
-Review [FOUNDRY_HEALTH_SIGNALS.md](docs/FOUNDRY_HEALTH_SIGNALS.md) before applying the signal template. The signal template performs full updates of the existing Foundry entity and its named signal entities, so signals not declared in the template are removed.
+Review [FOUNDRY_HEALTH_SIGNALS.md](docs/FOUNDRY_HEALTH_SIGNALS.md) before applying the signal template. The signal template performs a full update of the existing Foundry entity, so signals not declared in the template are removed. It doesn't create any additional Health Model entities or relationships.
 
 Discover the required values without hardcoding resource IDs:
 
@@ -335,7 +335,7 @@ foundry_entity_name="$(
 action_group_resource_id="$(azd env get-value AZURE_MONITOR_ACTION_GROUP_ID)"
 ```
 
-Preview the Foundry inference, safety, and usage signal branches:
+Preview the Foundry inference, safety, and usage signals:
 
 ```bash
 az deployment group what-if \
@@ -364,7 +364,7 @@ az deployment group create \
 
 The template intentionally uses account-level Foundry metrics without `dimensionFilter`. This application provisions one model deployment, so account-level and deployment-level values are equivalent. The `2026-05-01-preview` Health Model API removed the explicit `dimension` property, and raw dimension expressions cannot be represented by the portal editor. Avoid adding raw filters until the preview API and editor support the same filter model.
 
-The usage entity defaults to degraded above 25,000 inference tokens per 15 minutes and unhealthy above 50,000. Override these starter thresholds after baselining:
+The Foundry token-usage signal defaults to degraded above 25,000 inference tokens per 15 minutes and unhealthy above 50,000. Override these starter thresholds after baselining:
 
 ```bash
 --parameters \

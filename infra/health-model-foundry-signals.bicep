@@ -11,7 +11,7 @@ param foundryEntityName string
 @description('Full ARM resource ID of the Microsoft.CognitiveServices account.')
 param foundryResourceId string
 
-@description('Action group that receives Foundry safety and usage alerts.')
+@description('Action group that receives degraded and unhealthy Foundry alerts.')
 @minLength(1)
 param actionGroupResourceId string
 
@@ -21,11 +21,11 @@ param authenticationSettingName string = 'systemassigned'
 @description('Entity display name.')
 param foundryEntityDisplayName string = 'Microsoft Foundry'
 
-@description('Inference-token count in 15 minutes that degrades the Foundry usage entity.')
+@description('Inference-token count in 15 minutes that degrades the Foundry entity.')
 @minValue(1)
 param tokenUsageDegradedThreshold int = 25000
 
-@description('Inference-token count in 15 minutes that makes the Foundry usage entity unhealthy.')
+@description('Inference-token count in 15 minutes that makes the Foundry entity unhealthy.')
 @minValue(1)
 param tokenUsageUnhealthyThreshold int = 50000
 
@@ -66,7 +66,7 @@ var coreSignals = [
     evaluationRules: {
       degradedRule: {
         operator: 'GreaterThan'
-        threshold: 5000
+        threshold: 500
       }
       unhealthyRule: {
         operator: 'GreaterThan'
@@ -150,7 +150,7 @@ resource healthModel 'Microsoft.CloudHealth/healthmodels@2026-05-01-preview' exi
 }
 
 // Entity PUT operations replace the complete signalGroups value. Keep this file
-// as the source of truth for every signal group that should remain on this entity.
+// as the source of truth for every Foundry signal that should remain.
 resource foundryEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-preview' = {
   name: foundryEntityName
   parent: healthModel
@@ -165,6 +165,22 @@ resource foundryEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-p
       y: 420
     }
     healthObjective: 99
+    alerts: {
+      degraded: {
+        actionGroupIds: [
+          actionGroupResourceId
+        ]
+        description: 'Microsoft Foundry health is degraded.'
+        severity: 'Sev2'
+      }
+      unhealthy: {
+        actionGroupIds: [
+          actionGroupResourceId
+        ]
+        description: 'Microsoft Foundry is unhealthy and user impact is likely.'
+        severity: 'Sev1'
+      }
+    }
     signalGroups: {
       azureResource: {
         authenticationSetting: authenticationSettingName
@@ -172,153 +188,13 @@ resource foundryEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-p
         resourceHealth: {
           enabled: 'Enabled'
         }
-      }
-      dependencies: {
-        aggregationType: 'WorstOf'
-        ignoreUnknown: true
+        signals: concat(coreSignals, safetySignals, usageSignals)
       }
     }
-  }
-}
-
-resource azureMonitorEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-preview' = {
-  name: 'azure-monitor-api'
-  parent: healthModel
-  properties: {
-    displayName: 'Azure Monitor - Foundry Inference'
-    impact: 'Standard'
-    icon: {
-      iconName: 'Resource'
-    }
-    canvasPosition: {
-      x: -560
-      y: 640
-    }
-    healthObjective: 99
-    signalGroups: {
-      azureResource: {
-        authenticationSetting: authenticationSettingName
-        azureResourceId: foundryResourceId
-        signals: coreSignals
-      }
-    }
-  }
-}
-
-resource safetyEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-preview' = {
-  name: 'foundry-safety'
-  parent: healthModel
-  properties: {
-    displayName: 'Foundry Safety'
-    impact: 'Suppressed'
-    icon: {
-      iconName: 'Shield'
-    }
-    canvasPosition: {
-      x: -360
-      y: 640
-    }
-    alerts: {
-      degraded: {
-        actionGroupIds: [
-          actionGroupResourceId
-        ]
-        description: 'Foundry detected harmful content or blocked a request.'
-        severity: 'Sev3'
-      }
-      unhealthy: {
-        actionGroupIds: [
-          actionGroupResourceId
-        ]
-        description: 'Foundry safety events exceeded the configured threshold.'
-        severity: 'Sev2'
-      }
-    }
-    signalGroups: {
-      azureResource: {
-        authenticationSetting: authenticationSettingName
-        azureResourceId: foundryResourceId
-        signals: safetySignals
-      }
-    }
-  }
-}
-
-resource usageEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-preview' = {
-  name: 'foundry-usage'
-  parent: healthModel
-  properties: {
-    displayName: 'Foundry Usage'
-    impact: 'Suppressed'
-    icon: {
-      iconName: 'Gauge'
-    }
-    canvasPosition: {
-      x: -160
-      y: 640
-    }
-    alerts: {
-      degraded: {
-        actionGroupIds: [
-          actionGroupResourceId
-        ]
-        description: 'Foundry token consumption is elevated.'
-        severity: 'Sev3'
-      }
-      unhealthy: {
-        actionGroupIds: [
-          actionGroupResourceId
-        ]
-        description: 'Foundry token consumption exceeded the configured threshold.'
-        severity: 'Sev2'
-      }
-    }
-    signalGroups: {
-      azureResource: {
-        authenticationSetting: authenticationSettingName
-        azureResourceId: foundryResourceId
-        signals: usageSignals
-      }
-    }
-  }
-}
-
-// Keep this resource name so incremental deployments correct the existing
-// relationship instead of leaving a duplicate relationship in the model.
-resource foundryAzureMonitorRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
-  name: 'workload-to-azure-monitor'
-  parent: healthModel
-  properties: {
-    parentEntityName: foundryEntity.name
-    childEntityName: azureMonitorEntity.name
-    displayName: 'Foundry to Azure Monitor inference health'
-  }
-}
-
-resource foundrySafetyRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
-  name: 'foundry-to-safety'
-  parent: healthModel
-  properties: {
-    parentEntityName: foundryEntity.name
-    childEntityName: safetyEntity.name
-    displayName: 'Foundry to safety monitoring'
-  }
-}
-
-resource foundryUsageRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
-  name: 'foundry-to-usage'
-  parent: healthModel
-  properties: {
-    parentEntityName: foundryEntity.name
-    childEntityName: usageEntity.name
-    displayName: 'Foundry to usage monitoring'
   }
 }
 
 output entityResourceId string = foundryEntity.id
-output azureMonitorEntityResourceId string = azureMonitorEntity.id
-output safetyEntityResourceId string = safetyEntity.id
-output usageEntityResourceId string = usageEntity.id
-output configuredEntityCount int = 4
+output configuredEntityCount int = 1
 output configuredSignalCount int = length(coreSignals) + length(safetySignals) + length(usageSignals)
-output configuredRelationshipCount int = 3
+output configuredRelationshipCount int = 0

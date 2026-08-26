@@ -68,33 +68,33 @@ Don't use the legacy Cognitive Services metrics `TotalCalls`, `SuccessfulCalls`,
 
 ## Implemented Foundry signals
 
-The standalone [health-model-foundry-signals.bicep](../infra/health-model-foundry-signals.bicep) template configures five signals by default.
+The standalone [health-model-foundry-signals.bicep](../infra/health-model-foundry-signals.bicep) template configures five signals directly on the existing Foundry entity. It doesn't create child entities or relationships.
 
-### Azure Monitor - Foundry Inference
+### Foundry inference
 
 | Signal | Metric and filter | Aggregation/window | Degraded | Unhealthy |
 | --- | --- | --- | --- | --- |
 | Foundry availability | `AzureOpenAIAvailabilityRate` | Average / 15m | `< 99%` | `< 95%` |
-| User-perceived model latency | `AzureOpenAITTLTInMS` | Average / 15m | `> 5,000 ms` | `> 10,000 ms` |
+| User-perceived model latency | `AzureOpenAITTLTInMS` | Average / 15m | `> 500 ms` | `> 10,000 ms` |
 
-The inference entity has standard impact, so its state rolls up through the Foundry account to workload health.
+These signals directly determine Foundry entity health.
 
-### Foundry Safety
+### Foundry safety
 
 | Signal | Metric and filter | Aggregation/window | Degraded | Unhealthy |
 | --- | --- | --- | --- | --- |
 | Harmful requests | `RAIHarmfulRequests` | Total / 15m | `> 0` | `> 5` |
 | Content-filter blocks | `RAIRejectedRequests` | Total / 15m | `> 0` | `> 10` |
 
-The safety entity has suppressed impact and emits its own Sev3 degraded and Sev2 unhealthy alerts. This keeps safety events visible without treating successful guardrail enforcement as an availability failure.
+These signals directly determine Foundry entity health and use the Foundry entity's alert configuration.
 
-### Foundry Usage
+### Foundry usage
 
 | Signal | Metric and filter | Aggregation/window | Degraded | Unhealthy |
 | --- | --- | --- | --- | --- |
 | Inference-token consumption | `TokenTransaction` | Total / 15m | `> 25,000` | `> 50,000` |
 
-The thresholds are starter values and are configurable with `tokenUsageDegradedThreshold` and `tokenUsageUnhealthyThreshold`. The usage entity has suppressed impact and emits its own Sev3 and Sev2 alerts.
+The thresholds are starter values and are configurable with `tokenUsageDegradedThreshold` and `tokenUsageUnhealthyThreshold`. This signal directly determines Foundry entity health.
 
 ### Dimension-filter compatibility
 
@@ -113,7 +113,7 @@ Status-specific 4xx, 5xx, and 429 signals were removed for the same reason. Avai
 | Application Insights | API error rate and P95 request duration |
 | OpenTelemetry | Foundry and Cosmos dependency failures |
 | Log Analytics | Container runtime errors and ingress 5xx responses |
-| Alerting | Suppressed action-group entity plus workload, safety, and usage state alerts |
+| Alerting | Suppressed action-group entity plus workload and Foundry state alerts |
 
 The application emits custom dependency spans for Foundry and Cosmos operations. These support root-cause diagnosis without duplicating Foundry platform metrics.
 
@@ -122,10 +122,7 @@ The application emits custom dependency spans for Foundry and Cosmos operations.
 ```text
 Health Model root
 └── Clinical Trial Chat Workload (Standard, workload alerts)
-    ├── Microsoft Foundry (Standard, Resource Health)
-    │   ├── Azure Monitor - Foundry Inference (Standard)
-    │   ├── Foundry Safety (Suppressed, dedicated alerts)
-    │   └── Foundry Usage (Suppressed, dedicated alerts)
+    ├── Microsoft Foundry (Standard, Resource Health, inference, safety, and usage signals)
     ├── Application Insights - API (Standard)
     ├── OpenTelemetry Dependencies (Standard)
     ├── Log Analytics - Runtime (Standard)
@@ -134,7 +131,7 @@ Health Model root
 
 A parent entity's state is affected by its children. The workload must therefore parent Foundry and the telemetry layers; Foundry must not parent the workload.
 
-The alerting entity maps the shared action group as a distinct configuration layer. It has no health signal and is suppressed from rollup; alert delivery is driven by alert settings on the workload, safety, and usage entities.
+The alerting entity maps the shared action group as a distinct configuration layer. It has no health signal and is suppressed from rollup; alert delivery is driven by alert settings on the workload and Foundry entities.
 
 The templates retain the original relationship resource names while correcting their parent and child properties. This allows incremental deployments to update existing relationships instead of leaving duplicates or a health-propagation cycle.
 
@@ -168,7 +165,7 @@ Every KQL query should return exactly one numeric column, return zero rather tha
 
 ## Deployment considerations
 
-Deploying [health-model-foundry-signals.bicep](../infra/health-model-foundry-signals.bicep) performs full updates of the Foundry and named child entities. Signals omitted from the template are removed, so preview the deployment before applying it.
+Deploying [health-model-foundry-signals.bicep](../infra/health-model-foundry-signals.bicep) performs a full update of the existing Foundry entity. Signals omitted from the template are removed, so preview the deployment before applying it. The template doesn't create child entities or relationships.
 
 Deploy [health-model-observability.bicep](../infra/health-model-observability.bicep) after the Foundry signal template. It corrects workload rollup and adds workload-level alerts and application telemetry layers.
 
