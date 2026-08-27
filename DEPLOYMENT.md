@@ -540,7 +540,7 @@ az deployment group what-if \
     actionGroupResourceId="$action_group_resource_id"
 ```
 
-Apply after reviewing the relationship corrections. Health Model relationship endpoints are immutable, so remove obsolete or duplicate edges before migrating an existing graph to the stable `example-root-to-*` relationship names.
+Apply after reviewing the relationship corrections. Health Model relationship endpoints are immutable, so remove obsolete or duplicate edges before migrating an existing graph to the stable `health-root-to-*` and `chat-workload-to-*` relationship names.
 
 ```bash
 az deployment group create \

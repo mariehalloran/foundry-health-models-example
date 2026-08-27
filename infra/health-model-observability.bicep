@@ -14,11 +14,15 @@ param cosmosEntityName string
 
 @description('Health Model root entity.')
 @minLength(3)
-param rootEntityName string = 'foundry-health-model-example'
+param rootEntityName string = 'foundry'
 
 @description('Display name for the Health Model root entity.')
 @minLength(3)
 param rootEntityDisplayName string = 'Foundry Health Model Example'
+
+@description('Stable resource name for the clinical trial chat workload entity.')
+@minLength(3)
+param workloadEntityName string = 'clinical-trial-chat-workload'
 
 @description('Container App name used to scope Log Analytics queries.')
 param containerAppName string
@@ -133,7 +137,7 @@ resource rootEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-prev
 }
 
 resource workloadEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-preview' = {
-  name: 'clinical-trial-workload'
+  name: workloadEntityName
   parent: healthModel
   properties: {
     displayName: 'Clinical Trial Chat Workload'
@@ -395,7 +399,7 @@ resource logAnalyticsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05
 }
 
 resource rootFoundryRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
-  name: 'example-root-to-foundry'
+  name: 'health-root-to-foundry'
   parent: healthModel
   properties: {
     parentEntityName: rootEntity.name
@@ -405,7 +409,7 @@ resource rootFoundryRelationship 'Microsoft.CloudHealth/healthmodels/relationshi
 }
 
 resource rootWorkloadRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
-  name: 'example-root-to-workload'
+  name: 'health-root-to-workload'
   parent: healthModel
   properties: {
     parentEntityName: rootEntity.name
@@ -415,7 +419,7 @@ resource rootWorkloadRelationship 'Microsoft.CloudHealth/healthmodels/relationsh
 }
 
 resource rootCosmosRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
-  name: 'example-root-to-cosmos'
+  name: 'health-root-to-cosmos'
   parent: healthModel
   properties: {
     parentEntityName: rootEntity.name
@@ -425,7 +429,7 @@ resource rootCosmosRelationship 'Microsoft.CloudHealth/healthmodels/relationship
 }
 
 resource workloadAppInsightsRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
-  name: 'workload-to-application-insights'
+  name: 'chat-workload-to-application-insights'
   parent: healthModel
   properties: {
     parentEntityName: workloadEntity.name
@@ -435,7 +439,7 @@ resource workloadAppInsightsRelationship 'Microsoft.CloudHealth/healthmodels/rel
 }
 
 resource workloadOpenTelemetryRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
-  name: 'workload-to-opentelemetry'
+  name: 'chat-workload-to-opentelemetry'
   parent: healthModel
   properties: {
     parentEntityName: workloadEntity.name
@@ -445,7 +449,7 @@ resource workloadOpenTelemetryRelationship 'Microsoft.CloudHealth/healthmodels/r
 }
 
 resource workloadLogAnalyticsRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
-  name: 'workload-to-log-analytics'
+  name: 'chat-workload-to-log-analytics'
   parent: healthModel
   properties: {
     parentEntityName: workloadEntity.name
