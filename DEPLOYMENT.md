@@ -295,6 +295,57 @@ az containerapp job logs show \
 
 A successful run logs `Foundry synthetic probe succeeded` with the elapsed request time and Foundry request ID. A failed HTTP response, empty response, or timeout makes the job execution fail.
 
+## Enable Foundry client tracing
+
+The main `azd` deployment enables OpenAI .NET SDK instrumentation on the Container App and invokes [`infra/foundry-tracing.bicep`](infra/foundry-tracing.bicep). That module connects Application Insights to the Foundry project with `ProjectManagedIdentity` authentication and grants the project identity the **Monitoring Metrics Publisher** role.
+
+To deploy only the tracing connection:
+
+```bash
+resource_group="$(azd env get-value AZURE_RESOURCE_GROUP_NAME)"
+foundry_project_name="$(azd env get-value AZURE_AI_PROJECT_NAME)"
+app_insights_name="$(azd env get-value APPLICATIONINSIGHTS_NAME)"
+foundry_account_name="$(
+  az resource list \
+    --resource-group "$resource_group" \
+    --resource-type Microsoft.CognitiveServices/accounts \
+    --query '[0].name' \
+    --output tsv
+)"
+
+az deployment group what-if \
+  --resource-group "$resource_group" \
+  --template-file infra/foundry-tracing.bicep \
+  --parameters \
+    foundryAccountName="$foundry_account_name" \
+    foundryProjectName="$foundry_project_name" \
+    appInsightsName="$app_insights_name"
+
+az deployment group create \
+  --name foundry-tracing \
+  --resource-group "$resource_group" \
+  --template-file infra/foundry-tracing.bicep \
+  --parameters \
+    foundryAccountName="$foundry_account_name" \
+    foundryProjectName="$foundry_project_name" \
+    appInsightsName="$app_insights_name"
+```
+
+When deploying without a full `azd up`, enable the runtime feature flag and deploy the chat service:
+
+```bash
+container_app_name="$(azd env get-value SERVICE_CHAT_RESOURCE_NAME)"
+
+az containerapp update \
+  --resource-group "$resource_group" \
+  --name "$container_app_name" \
+  --set-env-vars \
+    OPENAI_EXPERIMENTAL_ENABLE_OPEN_TELEMETRY=true \
+    OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=false
+
+azd deploy chat
+```
+
 ## Verify Foundry client tracing
 
 The deployed chat application enables the OpenAI .NET SDK's experimental OpenTelemetry instrumentation and exports the `OpenAI.ChatClient` source and meter to Application Insights. Prompt and response content are not captured.
@@ -474,6 +525,8 @@ az deployment group what-if \
 
 Apply after reviewing the relationship corrections:
 
+If an earlier version created a reversed `foundry-to-workload` relationship, delete that relationship once before applying this template. Health Model relationship endpoints are immutable, and the corrected relationship uses the new `workload-to-foundry` name.
+
 ```bash
 az deployment group create \
   --name health-model-observability \
@@ -488,7 +541,7 @@ az deployment group create \
     actionGroupResourceId="$action_group_resource_id"
 ```
 
-The template retains the original relationship resource names while reversing their parent and child properties. This is intentional: an incremental deployment updates existing relationships in place instead of leaving duplicate relationships or a rollup cycle.
+The resulting relationship makes the workload the parent and Microsoft Foundry the child, allowing Foundry state to propagate into workload health without creating a cycle.
 
 ## Cost controls
 

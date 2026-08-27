@@ -108,11 +108,10 @@ Health Model root
     ├── Microsoft Foundry
     ├── Application Insights - API
     ├── OpenTelemetry - Foundry
-    ├── Log Analytics - Runtime
-    └── Azure Monitor Alerting (suppressed)
+    └── Log Analytics - Runtime
 ```
 
-The workload uses `WorstOf` dependency rollup with `ignoreUnknown: true`. Foundry and the telemetry entities use `Standard` impact, so their state can propagate to the workload and root. The alerting entity represents the shared action group and is suppressed from health propagation.
+The workload uses `WorstOf` dependency rollup with `ignoreUnknown: true`. Foundry and the telemetry entities use `Standard` impact, so their state can propagate to the workload and root. Alerts reference the shared Azure Monitor action group directly; the action group is not modeled as an entity because action groups expose no evaluatable metric or Resource Health signal.
 
 ## Deploy
 

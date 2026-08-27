@@ -326,32 +326,9 @@ resource logAnalyticsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05
   }
 }
 
-resource alertingEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-preview' = {
-  name: 'azure-monitor-alerting'
-  parent: healthModel
-  properties: {
-    displayName: 'Azure Monitor Alerting'
-    impact: 'Suppressed'
-    icon: {
-      iconName: 'Resource'
-    }
-    canvasPosition: {
-      x: 600
-      y: 420
-    }
-    signalGroups: {
-      azureResource: {
-        authenticationSetting: authenticationSettingName
-        azureResourceId: actionGroupResourceId
-      }
-    }
-  }
-}
-
-// Keep the original resource names so incremental deployments replace the
-// reversed relationships instead of leaving a cycle in the model.
+// Relationship endpoints are immutable, so the corrected edge uses a new name.
 resource workloadFoundryRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
-  name: 'foundry-to-workload'
+  name: 'workload-to-foundry'
   parent: healthModel
   properties: {
     parentEntityName: workloadEntity.name
@@ -400,17 +377,7 @@ resource workloadLogAnalyticsRelationship 'Microsoft.CloudHealth/healthmodels/re
   }
 }
 
-resource workloadAlertingRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
-  name: 'workload-to-alerting'
-  parent: healthModel
-  properties: {
-    parentEntityName: workloadEntity.name
-    childEntityName: alertingEntity.name
-    displayName: 'Workload to alerting'
-  }
-}
-
 output workloadEntityName string = workloadEntity.name
-output configuredEntityCount int = 5
+output configuredEntityCount int = 4
 output configuredSignalCount int = 5
-output configuredRelationshipCount int = 6
+output configuredRelationshipCount int = 5
