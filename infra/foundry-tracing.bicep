@@ -48,7 +48,9 @@ resource appInsightsConnection 'Microsoft.CognitiveServices/accounts/projects/co
   name: 'applicationinsights'
   parent: foundryProject
   properties: {
-    authType: 'AAD'
+    // The service requires this value although the current Bicep type still exposes AAD.
+    #disable-next-line BCP036
+    authType: 'ProjectManagedIdentity'
     category: 'AppInsights'
     isSharedToAll: true
     metadata: {
