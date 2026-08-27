@@ -1,6 +1,6 @@
 # Monitoring Microsoft Foundry with Azure Health Models
 
-This sample project demonstrates how to monitor a Microsoft Foundry workload with Azure Health Models. It uses a customer-facing clinical trial chatbot to show native Azure Monitor metrics, workspace-based Application Insights, OpenTelemetry traces, Log Analytics KQL signals, alerting, and workload-level health rollups across Microsoft Foundry, Azure Container Apps, and Azure Cosmos DB.
+This sample project demonstrates how to monitor a Microsoft Foundry workload with Azure Health Models. It uses a customer-facing clinical trial chatbot to show Foundry platform metrics and Resource Health, workspace-based Application Insights, a custom OpenTelemetry metric and dependency traces, Log Analytics KQL signals, entity alerts, and worst-of workload health rollup. Foundry and the application telemetry layers determine workload health; the Foundry and Azure Cosmos DB dependency spans are diagnostic and aren't configured as Health Model signals.
 
 The chatbot answers common, non-medical trial questions, remembers each demo user's recent conversations, and stores every interaction in Azure Cosmos DB.
 
@@ -16,6 +16,7 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for verified local-development, Azure deploym
 - Per-user conversation memory persisted in Azure Cosmos DB.
 - A browser frontend on Azure Static Web Apps with a linked ASP.NET Core API.
 - Starter questions that show the intended clinical trial use cases.
+- An opt-in Health Model configuration with 10 threshold-based signals, Foundry Resource Health, workload rollup, and entity-state alerts.
 
 `gpt-chat-latest` version `2026-08-06` is a preview model. It is used because this project intentionally demonstrates the latest chat model. For production or regulated workloads, select an approved generally available model and complete security, privacy, compliance, and clinical review.
 
@@ -106,6 +107,8 @@ Azure Static Web Apps serves the frontend and proxies `/api/*` routes to the lin
 ├── azure.yaml
 ├── DEPLOYMENT.md
 ├── deployment.env.example
+├── docs/
+│   └── FOUNDRY_HEALTH_SIGNALS.md
 ├── infra/
 │   ├── health-model-foundry-signals.bicep
 │   ├── health-model-metrics.bicep
@@ -280,11 +283,31 @@ Example chat request:
 }
 ```
 
-## Health Model metric access
+## Health Model signals
 
-Azure platform metrics are collected automatically. If a `Microsoft.CloudHealth/healthmodels` resource reports that it cannot read metrics, grant its managed identity **Monitoring Reader** access to the monitored resource group with the standalone [health-model-metrics.bicep](infra/health-model-metrics.bicep) template. This role assignment is intentionally separate from the main application deployment. See [DEPLOYMENT.md](DEPLOYMENT.md) for preview and deployment commands.
+The Health Model integration is opt-in and targets an existing `Microsoft.CloudHealth/healthmodels` resource. The supplied templates configure 10 threshold-based signals plus built-in Azure Resource Health for Foundry. Every threshold-based signal uses a 15-minute window and refreshes every five minutes.
 
-The reviewed Foundry signal catalog, logical derived metrics, starter thresholds, and entity hierarchy are documented in [FOUNDRY_HEALTH_SIGNALS.md](docs/FOUNDRY_HEALTH_SIGNALS.md). The opt-in [health-model-foundry-signals.bicep](infra/health-model-foundry-signals.bicep) template configures inference, safety, and token-usage signals. The separate [health-model-observability.bicep](infra/health-model-observability.bicep) template adds workload rollup, Application Insights, OpenTelemetry, Log Analytics, and consolidated workload alerts without changing `main.bicep`.
+| Entity or layer | Signal | Source | Degraded | Unhealthy |
+| --- | --- | --- | --- | --- |
+| Microsoft Foundry | Resource Health | Built-in Azure Resource Health | Platform state mapping | Platform state mapping |
+| Microsoft Foundry | Availability | Average `AzureOpenAIAvailabilityRate` | `< 99%` | `< 95%` |
+| Microsoft Foundry | Time to last byte | Average `AzureOpenAITTLTInMS` | `> 500 ms` | `> 10,000 ms` |
+| Microsoft Foundry | Harmful requests detected | Total `RAIHarmfulRequests` | `> 0` | `> 5` |
+| Microsoft Foundry | Requests blocked by content filters | Total `RAIRejectedRequests` | `> 0` | `> 10` |
+| Microsoft Foundry | Inference-token consumption | Total `TokenTransaction` | `> 25,000` | `> 50,000` |
+| Application Insights | API error rate | KQL over `AppRequests` | `> 1%` | `> 5%` |
+| Application Insights | API P95 duration | KQL over `AppRequests` | `> 15,000 ms` | `> 30,000 ms` |
+| OpenTelemetry | Input content-filter rejections | `foundry.content_filter.input_rejections` from `AppMetrics` | `> 0` | `> 3` |
+| Log Analytics | Container runtime errors | KQL over `ContainerAppConsoleLogs_CL` | `> 5` | `> 20` |
+| Log Analytics | Container ingress 5xx responses | KQL over `ContainerAppHTTPLogs` | `> 0` | `> 5` |
+
+[health-model-foundry-signals.bicep](infra/health-model-foundry-signals.bicep) configures the five Foundry metric signals directly on the existing Foundry entity, enables Resource Health, and adds Foundry state alerts. [health-model-observability.bicep](infra/health-model-observability.bicep) configures the five application signals, makes the workload use worst-of dependency rollup, and adds workload state alerts. Its separate Azure Monitor Alerting entity represents the shared action group and is suppressed from health rollup; it does not have a health signal.
+
+All numeric thresholds are sample defaults and should be tuned after baselining the workload. The token thresholds are configurable template parameters. Because the Foundry entity has `Standard` impact, all five Foundry metric signals, including safety and token usage, can propagate into workload health. The account-level `RAIRejectedRequests` platform metric covers all Foundry content-filter blocks, while the custom OpenTelemetry counter covers only input rejections observed by this API.
+
+Azure platform metrics are collected automatically. If the Health Model cannot read them, grant its managed identity **Monitoring Reader** access to the monitored resource group with the standalone [health-model-metrics.bicep](infra/health-model-metrics.bicep) template. Log Analytics signals additionally require the reader roles configured by that template when `logAnalyticsWorkspaceName` is supplied. These role assignments and signal templates remain separate from the main application deployment. See [DEPLOYMENT.md](DEPLOYMENT.md) for preview and deployment commands.
+
+The reviewed signal catalog, additional diagnostic metrics, future logical metrics, starter-threshold rationale, and entity hierarchy are documented in [FOUNDRY_HEALTH_SIGNALS.md](docs/FOUNDRY_HEALTH_SIGNALS.md). Agent-run, continuous-evaluation, and red-team signals are not available in this sample because it calls chat completions directly instead of using Foundry Agent Service.
 
 ## Memory and data
 

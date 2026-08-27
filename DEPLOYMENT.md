@@ -362,7 +362,7 @@ az deployment group create \
     actionGroupResourceId="$action_group_resource_id"
 ```
 
-The template intentionally uses account-level Foundry metrics without `dimensionFilter`. This application provisions one model deployment, so account-level and deployment-level values are equivalent. The `2026-05-01-preview` Health Model API removed the explicit `dimension` property, and raw dimension expressions cannot be represented by the portal editor. Avoid adding raw filters until the preview API and editor support the same filter model.
+The template intentionally uses account-level Foundry metrics without `dimensionFilter`. This application provisions one model deployment, so the aggregate represents that deployment unless more deployments are added to the account. The `2026-05-01-preview` entity schema exposes raw `dimensionFilter` text but no separate `dimension` property. Although the portal supports structured dimension selection, raw ARM filter expressions didn't round-trip reliably through the preview editor for this sample and could leave signal evaluation in `Unknown`. Keep the filter unset until the API, editor, and evaluator handle the same filter representation reliably.
 
 The Foundry token-usage signal defaults to degraded above 25,000 inference tokens per 15 minutes and unhealthy above 50,000. Override these starter thresholds after baselining:
 

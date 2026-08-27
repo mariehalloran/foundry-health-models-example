@@ -55,7 +55,7 @@ var coreSignals = [
   }
   {
     name: 'foundry-latency'
-    displayName: 'Foundry time to last token'
+    displayName: 'Foundry time to last byte'
     signalKind: 'AzureResourceMetric'
     metricNamespace: metricNamespace
     metricName: 'AzureOpenAITTLTInMS'

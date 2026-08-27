@@ -211,7 +211,7 @@ resource openTelemetryEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-0
         signals: [
           {
             name: 'otel-harmful-input-rejections'
-            displayName: 'OpenTelemetry harmful input rejections'
+            displayName: 'OpenTelemetry input content-filter rejections'
             signalKind: 'LogAnalyticsQuery'
             queryText: otelContentFilterRejectionQuery
             valueColumnName: 'HarmfulInputRejections'
