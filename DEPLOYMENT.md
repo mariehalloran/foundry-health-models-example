@@ -500,7 +500,7 @@ Deploy the layered observability template after the Foundry signal template. It 
 
 The OpenTelemetry signal counts Foundry HTTP 5xx responses surfaced to the API through the `foundry.server_errors` metric. It intentionally corroborates the account-level `AzureOpenAIAvailabilityRate` signal, although the custom metric covers only application-observed requests and uses count thresholds.
 
-The OpenTelemetry entity also evaluates the maximum `gen_ai.client.operation.duration` value observed each minute. Its starter thresholds are degraded above 500 ms and unhealthy above 10,000 ms. A normal chat request can therefore exercise the degraded workload alert path; increase `otelClientDurationDegradedThresholdMs` after validating delivery if 500 ms is too sensitive.
+The OpenTelemetry entity also evaluates the maximum `gen_ai.client.operation.duration` value observed each minute. Its demonstration thresholds are degraded above 50 ms and unhealthy above 10,000 ms. A normal chat request therefore exercises the degraded workload alert path; increase `otelClientDurationDegradedThresholdMs` after validating delivery.
 
 The base deployment sends console logs to Log Analytics but doesn't enable Container Apps HTTP diagnostic logs. The `ContainerAppHTTPLogs`-based ingress 5xx signal remains `Unknown` until HTTP logs are enabled on the managed environment. Review the [HTTP log schema](https://learn.microsoft.com/azure/container-apps/log-monitoring#http-logs), including its path, user-agent, and client-IP fields, and the additional ingestion cost before enabling that diagnostic category.
 
@@ -508,6 +508,20 @@ The base deployment sends console logs to Log Analytics but doesn't enable Conta
 container_app_name="$(azd env get-value SERVICE_CHAT_RESOURCE_NAME)"
 app_insights_resource_id="$(azd env get-value APPLICATIONINSIGHTS_RESOURCE_ID)"
 log_analytics_workspace_id="$(azd env get-value LOG_ANALYTICS_WORKSPACE_ID)"
+cosmos_resource_id="$(
+  az resource list \
+    --resource-group "$resource_group" \
+    --resource-type Microsoft.DocumentDB/databaseAccounts \
+    --query '[0].id' \
+    --output tsv
+)"
+cosmos_entity_name="$(
+  az rest \
+    --method get \
+    --url "https://management.azure.com${health_model_resource_id}/entities?api-version=2026-05-01-preview" \
+  | jq -r --arg id "$cosmos_resource_id" \
+      '.value[] | select(.properties.signalGroups.azureResource.azureResourceId == $id) | .name'
+)"
 ```
 
 Preview the hierarchy and workload signals:
@@ -519,13 +533,14 @@ az deployment group what-if \
   --parameters \
     healthModelName="$health_model_name" \
     foundryEntityName="$foundry_entity_name" \
+    cosmosEntityName="$cosmos_entity_name" \
     containerAppName="$container_app_name" \
     appInsightsResourceId="$app_insights_resource_id" \
     logAnalyticsWorkspaceResourceId="$log_analytics_workspace_id" \
     actionGroupResourceId="$action_group_resource_id"
 ```
 
-Apply after reviewing the relationship corrections. Health Model relationship endpoints are immutable, so remove obsolete or duplicate edges before migrating an existing graph to the stable `root-to-foundry` and `root-to-workload` relationship names.
+Apply after reviewing the relationship corrections. Health Model relationship endpoints are immutable, so remove obsolete or duplicate edges before migrating an existing graph to the stable `example-root-to-*` relationship names.
 
 ```bash
 az deployment group create \
@@ -535,13 +550,14 @@ az deployment group create \
   --parameters \
     healthModelName="$health_model_name" \
     foundryEntityName="$foundry_entity_name" \
+    cosmosEntityName="$cosmos_entity_name" \
     containerAppName="$container_app_name" \
     appInsightsResourceId="$app_insights_resource_id" \
     logAnalyticsWorkspaceResourceId="$log_analytics_workspace_id" \
     actionGroupResourceId="$action_group_resource_id"
 ```
 
-The resulting graph makes Foundry and the workload siblings under the root. The existing Cosmos DB entity and its root relationship remain managed outside this template.
+The resulting graph makes Foundry, Cosmos DB, and the workload siblings under the `Foundry Health Model Example` root. The existing Cosmos DB entity remains managed outside this template, while its root relationship is managed here.
 
 ## Cost controls
 

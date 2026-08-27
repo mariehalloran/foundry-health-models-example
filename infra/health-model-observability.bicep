@@ -8,9 +8,13 @@ param healthModelName string
 @minLength(3)
 param foundryEntityName string
 
+@description('Existing Cosmos DB entity displayed beside Foundry and the workload.')
+@minLength(3)
+param cosmosEntityName string
+
 @description('Health Model root entity.')
 @minLength(3)
-param rootEntityName string = 'foundry'
+param rootEntityName string = 'foundry-health-model-example'
 
 @description('Display name for the Health Model root entity.')
 @minLength(3)
@@ -34,7 +38,7 @@ param authenticationSettingName string = 'systemassigned'
 
 @description('Maximum Foundry client duration in one minute that degrades the OpenTelemetry entity.')
 @minValue(1)
-param otelClientDurationDegradedThresholdMs int = 500
+param otelClientDurationDegradedThresholdMs int = 50
 
 @description('Maximum Foundry client duration in one minute that makes the OpenTelemetry entity unhealthy.')
 @minValue(1)
@@ -391,7 +395,7 @@ resource logAnalyticsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05
 }
 
 resource rootFoundryRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
-  name: 'root-to-foundry'
+  name: 'example-root-to-foundry'
   parent: healthModel
   properties: {
     parentEntityName: rootEntity.name
@@ -401,12 +405,22 @@ resource rootFoundryRelationship 'Microsoft.CloudHealth/healthmodels/relationshi
 }
 
 resource rootWorkloadRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
-  name: 'root-to-workload'
+  name: 'example-root-to-workload'
   parent: healthModel
   properties: {
     parentEntityName: rootEntity.name
     childEntityName: workloadEntity.name
     displayName: 'Health Model root to workload'
+  }
+}
+
+resource rootCosmosRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
+  name: 'example-root-to-cosmos'
+  parent: healthModel
+  properties: {
+    parentEntityName: rootEntity.name
+    childEntityName: cosmosEntityName
+    displayName: 'Health Model root to Azure Cosmos DB'
   }
 }
 
@@ -443,4 +457,4 @@ resource workloadLogAnalyticsRelationship 'Microsoft.CloudHealth/healthmodels/re
 output workloadEntityName string = workloadEntity.name
 output configuredEntityCount int = 5
 output configuredSignalCount int = 6
-output configuredRelationshipCount int = 5
+output configuredRelationshipCount int = 6
