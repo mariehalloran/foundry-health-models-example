@@ -4,6 +4,8 @@ This repository is a reference implementation for monitoring a Microsoft Foundry
 
 The included chat application and scheduled probe generate realistic telemetry. Reuse the signal patterns and Bicep templates with your own Foundry workload.
 
+**Live application:** [Clinical Trial Chat](https://ambitious-glacier-0cabb320f.7.azurestaticapps.net/)
+
 > Azure Monitor Health Models and the `Microsoft.CloudHealth` API used by this sample are in preview. Validate signal behavior and tune every threshold before using the model in production.
 
 ## Available Azure Health Model signals
@@ -25,7 +27,7 @@ A one-minute query window prioritizes fast state changes but can miss telemetry 
 | Application Insights | API error rate | `AppRequests` KQL query | `> 1%` | `> 5%` |
 | Application Insights | API P95 duration | `AppRequests` KQL query | `> 15,000 ms` | `> 30,000 ms` |
 | OpenTelemetry | Application-observed Foundry HTTP 5xx errors | `foundry.server_errors` in `AppMetrics` | `> 0` | `> 3` |
-| OpenTelemetry | Maximum Foundry client duration | `gen_ai.client.operation.duration` in `AppMetrics` | `> 50 ms` | `> 10,000 ms` |
+| OpenTelemetry | Maximum Foundry client duration | `gen_ai.client.operation.duration` in `AppMetrics` | `> 25 ms` | `> 50 ms` |
 | Log Analytics | Container runtime errors | `ContainerAppConsoleLogs_CL` KQL query | `> 5` | `> 20` |
 | Log Analytics | Container ingress HTTP 5xx responses | `ContainerAppHTTPLogs` KQL query | `> 0` | `> 5` |
 
@@ -93,7 +95,7 @@ The metric includes no prompt text, response body, user ID, status-code attribut
 
 The deployed application also enables the OpenAI .NET SDK's experimental OpenTelemetry instrumentation for the actual `ChatClient` request. It subscribes to the `OpenAI.ChatClient` activity source and meter, which emit a client span, operation duration, token usage, response model, response ID, finish reason, and error status using `gen_ai.*` semantic-convention attributes. Message-content capture remains disabled.
 
-The Health Model converts the SDK's `gen_ai.client.operation.duration` histogram from seconds to milliseconds and evaluates the maximum duration observed each minute. Because the demonstration degraded threshold is 50 ms, a real chat request intentionally exercises the degraded workload alert path. Raise the threshold after validating alert delivery to avoid excessive state transitions.
+The Health Model converts the SDK's `gen_ai.client.operation.duration` histogram from seconds to milliseconds and evaluates the maximum duration observed each minute. The demonstration thresholds make the signal degraded above 25 ms and unhealthy above 50 ms, so a real chat request intentionally exercises the unhealthy alert path. Raise both thresholds after validating alert delivery to avoid excessive state transitions.
 
 The Microsoft Foundry tracing article recommends server-side tracing for prompt and hosted agents. This sample is not a hosted agent: it invokes a Foundry model directly through `ChatClient`, so it uses client-side SDK instrumentation instead. The infrastructure connects the existing Application Insights resource to the Foundry project with project-managed-identity authentication and grants the project identity permission to publish telemetry. Direct model traces are available in Application Insights; agent-specific Foundry dashboards still require a Foundry agent or workflow that emits `gen_ai.agent.*` attributes.
 

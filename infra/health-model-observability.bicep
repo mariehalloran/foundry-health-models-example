@@ -42,11 +42,11 @@ param authenticationSettingName string = 'systemassigned'
 
 @description('Maximum Foundry client duration in one minute that degrades the OpenTelemetry entity.')
 @minValue(1)
-param otelClientDurationDegradedThresholdMs int = 50
+param otelClientDurationDegradedThresholdMs int = 25
 
 @description('Maximum Foundry client duration in one minute that makes the OpenTelemetry entity unhealthy.')
 @minValue(1)
-param otelClientDurationUnhealthyThresholdMs int = 10000
+param otelClientDurationUnhealthyThresholdMs int = 50
 
 var apiErrorRateQuery = '''
 let result = AppRequests
