@@ -105,6 +105,14 @@ The `2026-05-01-preview` entity schema exposes raw `dimensionFilter` text but no
 
 Status-specific 4xx, 5xx, and 429 signals were removed for the same compatibility reason. Availability already captures server-error impact, while the application error-rate signal captures failed API requests and the custom OpenTelemetry signal identifies application-observed input content-filter rejections. Add status-specific rates as zero-guarded KQL signals after exporting `AzureOpenAIRequests` to Log Analytics.
 
+### Synthetic metric population
+
+The base deployment includes a `Microsoft.App/jobs` scheduled job with the cron expression `* * * * *`. It calls the Foundry chat-completions endpoint directly once per minute through the existing private endpoint and private DNS path. The job has no ingress, doesn't use Static Web Apps or the application API, and doesn't access Cosmos DB.
+
+The probe uses a dedicated managed identity with only ACR pull and Cognitive Services OpenAI User assignments. It sends a fixed prompt, allows at most 16 completion tokens, applies a 45-second request timeout, and doesn't retry. This normally contributes about 15 samples to each 15-minute account-level Foundry metric window and prevents an idle workload from being interpreted as a zero availability measurement.
+
+The probe doesn't guarantee a healthy signal. Foundry 5xx responses lower `AzureOpenAIAvailabilityRate` and fail the job execution. Authentication, DNS, image-start, or scheduler failures before Foundry receives the request can still result in missing metric data and an `Unknown` signal. Correlate Foundry signal history with Container Apps Job execution history. The synthetic requests also contribute to latency and token metrics and add about 43,200 model calls per 30-day month.
+
 ## Application observability signals
 
 [health-model-observability.bicep](../infra/health-model-observability.bicep) adds five `LogAnalyticsQuery` signals. Each query covers 15 minutes, returns a zero when its source table exists but no matching records are found, and refreshes every five minutes.

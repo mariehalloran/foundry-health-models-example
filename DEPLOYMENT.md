@@ -81,7 +81,7 @@ Open `http://localhost:5173`.
 dotnet test ClinicalTrialChat.slnx
 ```
 
-The tests cover user ID validation, bounded conversation context, frontend entry points, local CORS, starter questions, local chat memory, and deletion.
+The tests cover user ID validation, bounded conversation context, frontend entry points, local CORS, starter questions, local chat memory and deletion, plus the direct Foundry probe request and managed-identity token scope.
 
 ## Configure an Azure environment
 
@@ -142,14 +142,19 @@ The deployment creates:
 - Standard Azure Static Web App hosting the separate frontend.
 - Static Web Apps linked backend that proxies `/api/*` to Container Apps.
 - Azure Container App and Container Apps environment.
+- One-minute scheduled Container Apps Job that calls Foundry directly.
 - Azure Cosmos DB serverless account and conversation container.
 - A virtual network, private endpoints, and private DNS zones.
-- User-assigned managed identity and role assignments.
+- Separate application and probe managed identities with scoped role assignments.
 - Basic Azure Container Registry.
 - Log Analytics workspace.
 - A monthly Azure budget with alert notifications.
 
 Foundry and Cosmos DB have public network access and local-key authentication disabled. The Container App reaches both services through private endpoints. Static Web Apps linking configures the Container App to accept requests proxied through the Static Web App rather than direct anonymous browser traffic.
+
+The scheduled job has no ingress and doesn't call Static Web Apps or the application API. It uses its dedicated managed identity to send one fixed chat-completion request directly to Foundry through the same VNet and private DNS path.
+
+The probe identity, role assignments, and job are isolated in [`infra/foundry-health-probe.bicep`](infra/foundry-health-probe.bicep). The main deployment invokes this module, and operators can also preview or deploy it independently when unrelated resources in the environment have drift.
 
 ## Test the deployed app
 
@@ -186,6 +191,21 @@ curl --fail "$app_url/api/history/$user_id"
 curl --fail --request DELETE "$app_url/api/history/$user_id"
 ```
 
+Verify the one-minute probe schedule:
+
+```bash
+resource_group="$(azd env get-value AZURE_RESOURCE_GROUP_NAME)"
+probe_job="$(azd env get-value SERVICE_PROBE_RESOURCE_NAME)"
+
+az containerapp job execution list \
+  --name "$probe_job" \
+  --resource-group "$resource_group" \
+  --query '[].{Status:properties.status,Name:name,StartTime:properties.startTime}' \
+  --output table
+```
+
+Wait up to two minutes after deployment if necessary. The latest execution should be `Succeeded`. Each run makes one direct Foundry request with a maximum of 16 completion tokens, no retry, and a 45-second request timeout.
+
 ## Deploy application updates
 
 When only application code changed:
@@ -199,9 +219,10 @@ Deploy just one service when appropriate:
 ```bash
 azd deploy web
 azd deploy chat
+azd deploy probe
 ```
 
-When Bicep or either service changed:
+When Bicep or multiple services changed:
 
 ```bash
 azd provision --preview
@@ -260,6 +281,19 @@ az containerapp logs show \
   --tail 100 \
   --format text
 ```
+
+View the scheduled probe's latest execution logs:
+
+```bash
+probe_job="$(azd env get-value SERVICE_PROBE_RESOURCE_NAME)"
+
+az containerapp job logs show \
+  --resource-group "$resource_group" \
+  --name "$probe_job" \
+  --container probe
+```
+
+A successful run logs `Foundry synthetic probe succeeded` with the elapsed request time and Foundry request ID. A failed HTTP response, empty response, or timeout makes the job execution fail.
 
 ## Grant an Azure Health Model access to metrics
 
@@ -367,6 +401,8 @@ az deployment group create \
 
 The template intentionally uses account-level Foundry metrics without `dimensionFilter`. This application provisions one model deployment, so the aggregate represents that deployment unless more deployments are added to the account. The `2026-05-01-preview` entity schema exposes raw `dimensionFilter` text but no separate `dimension` property. Although the portal supports structured dimension selection, raw ARM filter expressions didn't round-trip reliably through the preview editor for this sample and could leave signal evaluation in `Unknown`. Keep the filter unset until the API, editor, and evaluator handle the same filter representation reliably.
 
+The scheduled job sends one synthetic request per minute into these same account-level metrics. It keeps low-traffic windows populated but doesn't force the availability signal to healthy: a Foundry 5xx lowers `AzureOpenAIAvailabilityRate`, while a job failure before the request reaches Foundry can still leave missing metric data. Review Container Apps Job execution history when the Foundry signal is `Unknown`.
+
 The Foundry token-usage signal defaults to degraded above 25,000 inference tokens per 15 minutes and unhealthy above 50,000. Override these starter thresholds after baselining:
 
 ```bash
@@ -425,6 +461,7 @@ The template retains the original relationship resource names while reversing th
 The default infrastructure uses:
 
 - Container Apps scale-to-zero with at most one replica.
+- A run-to-completion probe with one replica, no retries, and one execution per minute.
 - Standard Static Web Apps, required for the linked Container Apps backend.
 - Cosmos DB serverless.
 - Basic Container Registry.
@@ -432,6 +469,8 @@ The default infrastructure uses:
 - Thirty-day conversation TTL.
 - A 1 GB/day Log Analytics ingestion cap.
 - A $500 monthly budget with threshold alerts.
+
+The probe runs about 43,200 times per 30-day month. Each run uses Container Apps execution time and a small Foundry request, so include both compute and model-token usage when tuning the budget.
 
 The Standard Static Web Apps plan had a $9/month base retail price in `eastus2` when this guide was updated. Azure budgets send notifications but do not automatically stop resources.
 

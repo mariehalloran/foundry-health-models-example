@@ -1,6 +1,6 @@
 # Monitoring Microsoft Foundry with Azure Health Models
 
-This sample project demonstrates how to monitor a Microsoft Foundry workload with Azure Health Models. It uses a customer-facing clinical trial chatbot to show Foundry platform metrics and Resource Health, workspace-based Application Insights, a custom OpenTelemetry metric and dependency traces, Log Analytics KQL signals, entity alerts, and worst-of workload health rollup. Foundry and the application telemetry layers determine workload health; the Foundry and Azure Cosmos DB dependency spans are diagnostic and aren't configured as Health Model signals.
+This sample project demonstrates how to monitor a Microsoft Foundry workload with Azure Health Models. It uses a customer-facing clinical trial chatbot to show Foundry platform metrics and Resource Health, a direct one-minute synthetic model probe, workspace-based Application Insights, a custom OpenTelemetry metric and dependency traces, Log Analytics KQL signals, entity alerts, and worst-of workload health rollup. Foundry and the application telemetry layers determine workload health; the Foundry and Azure Cosmos DB dependency spans are diagnostic and aren't configured as Health Model signals.
 
 The chatbot answers common, non-medical trial questions, remembers each demo user's recent conversations, and stores every interaction in Azure Cosmos DB.
 
@@ -17,6 +17,7 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for verified local-development, Azure deploym
 - A browser frontend on Azure Static Web Apps with a linked ASP.NET Core API.
 - Starter questions that show the intended clinical trial use cases.
 - An opt-in Health Model configuration with 10 threshold-based signals, Foundry Resource Health, workload rollup, and entity-state alerts.
+- A cron-scheduled Container Apps Job that calls Foundry directly every minute to keep low-traffic platform metrics populated.
 
 `gpt-chat-latest` version `2026-08-06` is a preview model. It is used because this project intentionally demonstrates the latest chat model. For production or regulated workloads, select an approved generally available model and complete security, privacy, compliance, and clinical review.
 
@@ -44,7 +45,8 @@ flowchart LR
         subgraph appPlatform["Application platform"]
             swa["Azure Static Web Apps<br/>Standard plan<br/>Frontend + /api proxy"]
             acr["Azure Container Registry<br/>Basic SKU"]
-            identity["User-assigned<br/>managed identity"]
+            identity["Application<br/>managed identity"]
+            probeIdentity["Probe<br/>managed identity"]
             logs["Log Analytics workspace<br/>30-day retention<br/>1 GB/day ingestion cap"]
         end
 
@@ -52,6 +54,7 @@ flowchart LR
             subgraph acaSubnet["Container Apps subnet /26"]
                 env["Container Apps environment<br/>Consumption"]
                 app["Azure Container App API<br/>SWA-linked authentication<br/>0-1 replicas"]
+                probe["Scheduled probe job<br/>Every minute, no ingress"]
             end
 
             subgraph privateSubnet["Private endpoint subnet /27"]
@@ -79,26 +82,34 @@ flowchart LR
     user -->|"HTTPS"| swa
     swa -->|"Same-origin /api proxy"| app
     acr -->|"Container image<br/>AcrPull role"| app
+    acr -->|"Probe image<br/>AcrPull role"| probe
     app -.->|"Uses"| identity
+    probe -.->|"Uses"| probeIdentity
     identity -->|"Cognitive Services<br/>OpenAI User role"| model
+    probeIdentity -->|"Cognitive Services<br/>OpenAI User role"| model
     identity -->|"Cosmos DB Built-in<br/>Data Contributor role"| interactions
     app -->|"Private prompt traffic"| foundryPe --> model
+    probe -->|"Private synthetic prompt<br/>once per minute"| foundryPe
     model -->|"Private response traffic"| foundryPe
     app -->|"Private read/write traffic"| cosmosPe --> interactions
     foundryDns -.->|"Private resolution"| app
+    foundryDns -.->|"Private resolution"| probe
     cosmosDns -.->|"Private resolution"| app
     account --> project
     account --> model
     cosmos --> database --> interactions
     app -->|"Console logs"| env --> logs
+    probe -->|"Execution logs"| env
     budget -.->|"Email alerts"| operator
 ```
 
 The browser keeps a random demo user ID in local storage. The API uses that ID as the Cosmos DB partition key, loads a bounded window of recent messages before each model call, and saves both the user's message and the assistant's response. Returning with the same browser demonstrates memory without adding a full identity system.
 
-The application has no stored Azure credentials. Its user-assigned managed identity pulls the container image and accesses both Foundry and Cosmos DB through role assignments. The Container Apps environment is injected into the virtual network. Private DNS resolves the normal service hostnames to private endpoint addresses, and public data-plane access is disabled on both Foundry and Cosmos DB.
+The application has no stored Azure credentials. Its user-assigned managed identity pulls the API image and accesses both Foundry and Cosmos DB through role assignments. The probe has a separate managed identity with only ACR pull and Foundry inference access. The Container Apps environment is injected into the virtual network. Private DNS resolves the normal service hostnames to private endpoint addresses, and public data-plane access is disabled on both Foundry and Cosmos DB.
 
 Azure Static Web Apps serves the frontend and proxies `/api/*` routes to the linked Container App. Linking adds the **Azure Static Web Apps (Linked)** authentication provider so direct anonymous traffic to the Container App is rejected. Container Registry and Log Analytics are outside the private dependency path. The resource-group budget sends alerts but does **not** automatically stop services; the model capacity, scale-to-zero compute, serverless database, data retention, and logging cap provide additional cost controls.
+
+The scheduled probe is independent of Static Web Apps and the application API. Every minute, its run-to-completion container acquires a Foundry token with managed identity and sends a fixed, minimal chat-completion request through the private endpoint. It has no ingress, doesn't read or write Cosmos DB, doesn't retry failed model calls, and exits unsuccessfully on an HTTP error, empty response, or 45-second timeout.
 
 ## Project layout
 
@@ -113,6 +124,7 @@ Azure Static Web Apps serves the frontend and proxies `/api/*` routes to the lin
 │   ├── health-model-foundry-signals.bicep
 │   ├── health-model-metrics.bicep
 │   ├── health-model-observability.bicep
+│   ├── foundry-health-probe.bicep
 │   ├── main.bicep
 │   ├── main.parameters.json
 │   └── resources.bicep
@@ -123,6 +135,9 @@ Azure Static Web Apps serves the frontend and proxies `/api/*` routes to the lin
 │   │   ├── Data/
 │   │   ├── Models/
 │   │   └── Services/
+│   ├── ClinicalTrialChat.Probe/
+│   │   ├── Dockerfile
+│   │   └── FoundryAvailabilityProbe.cs
 │   └── ClinicalTrialChat.Web/
 │       ├── app.js
 │       ├── index.html
@@ -176,7 +191,7 @@ azd up
 
 The example location is `eastus2`. Model availability and quota vary by subscription and region; change `AZURE_LOCATION` in `deployment.env` before running the configuration script if necessary.
 
-After deployment, `azd` prints the public application URL.
+After deployment, `azd` prints the public application URL and starts the probe job's one-minute schedule.
 
 ## Test the deployed app
 
@@ -221,6 +236,21 @@ The expected results are:
 - `/api/chat` returns an assistant message.
 - `/api/history/{userId}` returns both user and assistant messages.
 - `DELETE /api/history/{userId}` returns HTTP `204`.
+
+Verify that the direct Foundry probe is succeeding:
+
+```bash
+resource_group="$(azd env get-value AZURE_RESOURCE_GROUP_NAME)"
+probe_job="$(azd env get-value SERVICE_PROBE_RESOURCE_NAME)"
+
+az containerapp job execution list \
+  --name "$probe_job" \
+  --resource-group "$resource_group" \
+  --query '[].{Status:properties.status,Name:name,StartTime:properties.startTime}' \
+  --output table
+```
+
+Wait up to two minutes after deployment if no execution is listed yet. Successful runs log `Foundry synthetic probe succeeded` and make one direct Foundry request; they don't exercise Static Web Apps, the API, or Cosmos DB.
 
 ## Run locally against Azure
 
@@ -311,6 +341,12 @@ Azure platform metrics are collected automatically. If the Health Model cannot r
 
 The reviewed signal catalog, additional diagnostic metrics, future logical metrics, starter-threshold rationale, and entity hierarchy are documented in [FOUNDRY_HEALTH_SIGNALS.md](docs/FOUNDRY_HEALTH_SIGNALS.md). Agent-run metrics, continuous-evaluation results, and red-team results aren't configured because this sample calls chat completions directly and isn't registered as a Foundry agent.
 
+### Synthetic Foundry traffic
+
+The scheduled probe contributes one request per minute to the account-level Foundry availability, latency, request, safety-denominator, and token metrics. A 15-minute signal window therefore normally contains about 15 synthetic samples even when no users are chatting, which avoids inactivity being mistaken for a zero availability value. Missing data can still produce `Unknown`; the probe does not manufacture a healthy result.
+
+A Foundry 5xx response is included in `AzureOpenAIAvailabilityRate` and causes that probe execution to fail. Authentication, DNS, image-start, or other failures that occur before Foundry receives the request also fail the Container Apps Job, but they can leave a gap in the Foundry metric. Check the job execution history alongside the Health Model when investigating missing data.
+
 ## Memory and data
 
 Cosmos DB uses `/userId` as the partition key. Each message is a separate document containing:
@@ -346,4 +382,4 @@ azd down --purge
 
 ## Cost notes
 
-This demo creates billable Azure resources, including a Standard Azure Static Web App, model deployment, Azure Container Apps, Azure Container Registry, Azure Cosmos DB, two private endpoints, and four private DNS zones. The Standard Static Web Apps plan is required for the linked Container Apps backend and had a $9/month base retail price in `eastus2` when this project was updated. Cosmos DB is configured for serverless usage and the container app can scale to zero, but model, registry, Private Link, DNS, bandwidth, and data-processing charges may still apply.
+This demo creates billable Azure resources, including a Standard Azure Static Web App, model deployment, Azure Container App, scheduled Container Apps Job, Azure Container Registry, Azure Cosmos DB, two private endpoints, and four private DNS zones. The Standard Static Web Apps plan is required for the linked Container Apps backend and had a $9/month base retail price in `eastus2` when this project was updated. Cosmos DB is configured for serverless usage and the API can scale to zero, but the probe runs about 43,200 times in a 30-day month and each run incurs Container Apps execution plus Foundry token charges. Model, registry, Private Link, DNS, bandwidth, and data-processing charges may also apply.
