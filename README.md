@@ -8,7 +8,7 @@ The included chat application and scheduled probe generate realistic telemetry. 
 
 > Azure Monitor Health Models and the `Microsoft.CloudHealth` API used by this sample are in preview. Validate signal behavior and tune every threshold before using the model in production.
 
-## Available Azure Health Model signals
+## Sample Azure Health Model signals
 
 The project configures 11 threshold-based signals plus Azure Resource Health. Each threshold signal evaluates a one-minute window and refreshes every minute so newly ingested failures affect health as quickly as the preview service allows.
 
