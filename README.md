@@ -8,7 +8,7 @@ The included chat application and scheduled probe generate realistic telemetry. 
 
 ## Available Azure Health Model signals
 
-The project configures 10 threshold-based signals plus Azure Resource Health. Each threshold signal evaluates a one-minute window and refreshes every minute so newly ingested failures affect health as quickly as the preview service allows.
+The project configures 11 threshold-based signals plus Azure Resource Health. Each threshold signal evaluates a one-minute window and refreshes every minute so newly ingested failures affect health as quickly as the preview service allows.
 
 The thresholds are starting points, not universal production defaults. Baseline your own traffic, latency, token volume, and failure patterns before changing an entity's production health state.
 
@@ -25,6 +25,7 @@ A one-minute query window prioritizes fast state changes but can miss telemetry 
 | Application Insights | API error rate | `AppRequests` KQL query | `> 1%` | `> 5%` |
 | Application Insights | API P95 duration | `AppRequests` KQL query | `> 15,000 ms` | `> 30,000 ms` |
 | OpenTelemetry | Application-observed Foundry HTTP 5xx errors | `foundry.server_errors` in `AppMetrics` | `> 0` | `> 3` |
+| OpenTelemetry | Maximum Foundry client duration | `gen_ai.client.operation.duration` in `AppMetrics` | `> 500 ms` | `> 10,000 ms` |
 | Log Analytics | Container runtime errors | `ContainerAppConsoleLogs_CL` KQL query | `> 5` | `> 20` |
 | Log Analytics | Container ingress HTTP 5xx responses | `ContainerAppHTTPLogs` KQL query | `> 0` | `> 5` |
 
@@ -92,6 +93,8 @@ The metric includes no prompt text, response body, user ID, status-code attribut
 
 The deployed application also enables the OpenAI .NET SDK's experimental OpenTelemetry instrumentation for the actual `ChatClient` request. It subscribes to the `OpenAI.ChatClient` activity source and meter, which emit a client span, operation duration, token usage, response model, response ID, finish reason, and error status using `gen_ai.*` semantic-convention attributes. Message-content capture remains disabled.
 
+The Health Model converts the SDK's `gen_ai.client.operation.duration` histogram from seconds to milliseconds and evaluates the maximum duration observed each minute. Because the starter degraded threshold is 500 ms, a real chat request can intentionally demonstrate the degraded workload alert path. Raise the threshold after validating alert delivery if normal model latency creates excessive state transitions.
+
 The Microsoft Foundry tracing article recommends server-side tracing for prompt and hosted agents. This sample is not a hosted agent: it invokes a Foundry model directly through `ChatClient`, so it uses client-side SDK instrumentation instead. The infrastructure connects the existing Application Insights resource to the Foundry project with project-managed-identity authentication and grants the project identity permission to publish telemetry. Direct model traces are available in Application Insights; agent-specific Foundry dashboards still require a Foundry agent or workflow that emits `gen_ai.agent.*` attributes.
 
 ### Log Analytics
@@ -104,14 +107,15 @@ The ingress signal detects application HTTP 5xx responses in `ContainerAppHTTPLo
 
 ```text
 Health Model root
+├── Microsoft Foundry
+├── Azure Cosmos DB
 └── Clinical Trial Chat Workload
-    ├── Microsoft Foundry
     ├── Application Insights - API
     ├── OpenTelemetry - Foundry
     └── Log Analytics - Runtime
 ```
 
-The workload uses `WorstOf` dependency rollup with `ignoreUnknown: true`. Foundry and the telemetry entities use `Standard` impact, so their state can propagate to the workload and root. Alerts reference the shared Azure Monitor action group directly; the action group is not modeled as an entity because action groups expose no evaluatable metric or Resource Health signal.
+The root directly parents the existing Foundry, Cosmos DB, and workload entities. The workload uses `WorstOf` dependency rollup with `ignoreUnknown: true` for its Application Insights, OpenTelemetry, and Log Analytics children. Alerts reference the shared Azure Monitor action group directly; the action group is not modeled as an entity because action groups expose no evaluatable metric or Resource Health signal.
 
 ## Deploy
 

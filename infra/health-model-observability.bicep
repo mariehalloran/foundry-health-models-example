@@ -28,6 +28,14 @@ param actionGroupResourceId string
 @description('Existing Health Model authentication setting.')
 param authenticationSettingName string = 'systemassigned'
 
+@description('Maximum Foundry client duration in one minute that degrades the OpenTelemetry entity.')
+@minValue(1)
+param otelClientDurationDegradedThresholdMs int = 500
+
+@description('Maximum Foundry client duration in one minute that makes the OpenTelemetry entity unhealthy.')
+@minValue(1)
+param otelClientDurationUnhealthyThresholdMs int = 10000
+
 var apiErrorRateQuery = '''
 let result = AppRequests
     | where TimeGenerated > ago(1m)
@@ -56,6 +64,16 @@ let result = AppMetrics
     | summarize FoundryServerErrors = toint(sum(Sum));
 union result, (print FoundryServerErrors = toint(0))
 | summarize FoundryServerErrors = max(FoundryServerErrors)
+'''
+
+var otelFoundryClientDurationQuery = '''
+let result = AppMetrics
+    | where TimeGenerated > ago(1m)
+    | where AppRoleName endswith "clinical-trial-chat-api"
+    | where Name == "gen_ai.client.operation.duration"
+    | summarize FoundryClientDurationMs = toint(coalesce(max(Max), 0.0) * 1000.0);
+union result, (print FoundryClientDurationMs = toint(0))
+| summarize FoundryClientDurationMs = max(FoundryClientDurationMs)
 '''
 
 var runtimeConsoleErrorQuery = replace('''
@@ -95,8 +113,8 @@ resource workloadEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-
       iconName: 'SystemComponent'
     }
     canvasPosition: {
-      x: 20
-      y: 360
+      x: -10
+      y: 320
     }
     alerts: {
       degraded: {
@@ -142,8 +160,8 @@ resource appInsightsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-
       iconName: 'AppService'
     }
     canvasPosition: {
-      x: -200
-      y: 720
+      x: -330
+      y: 530
     }
     signalGroups: {
       azureResource: {
@@ -219,8 +237,8 @@ resource openTelemetryEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-0
       iconName: 'Resource'
     }
     canvasPosition: {
-      x: 180
-      y: 720
+      x: -10
+      y: 630
     }
     signalGroups: {
       azureLogAnalytics: {
@@ -244,6 +262,26 @@ resource openTelemetryEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-0
               unhealthyRule: {
                 operator: 'GreaterThan'
                 threshold: 3
+              }
+            }
+          }
+          {
+            name: 'otel-foundry-client-duration'
+            displayName: 'OpenTelemetry Foundry client duration'
+            signalKind: 'LogAnalyticsQuery'
+            queryText: otelFoundryClientDurationQuery
+            valueColumnName: 'FoundryClientDurationMs'
+            dataUnit: 'MilliSeconds'
+            timeGrain: 'PT1M'
+            refreshInterval: 'PT1M'
+            evaluationRules: {
+              degradedRule: {
+                operator: 'GreaterThan'
+                threshold: otelClientDurationDegradedThresholdMs
+              }
+              unhealthyRule: {
+                operator: 'GreaterThan'
+                threshold: otelClientDurationUnhealthyThresholdMs
               }
             }
           }
@@ -272,8 +310,8 @@ resource logAnalyticsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05
       iconName: 'Resource'
     }
     canvasPosition: {
-      x: 450
-      y: 560
+      x: 340
+      y: 530
     }
     signalGroups: {
       azureLogAnalytics: {
@@ -326,19 +364,18 @@ resource logAnalyticsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05
   }
 }
 
-// Relationship endpoints are immutable, so the corrected edge uses a new name.
-resource workloadFoundryRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
-  name: 'workload-to-foundry'
+resource rootFoundryRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
+  name: 'root-to-foundry'
   parent: healthModel
   properties: {
-    parentEntityName: workloadEntity.name
+    parentEntityName: rootEntityName
     childEntityName: foundryEntityName
-    displayName: 'Workload to Microsoft Foundry'
+    displayName: 'Health Model root to Microsoft Foundry'
   }
 }
 
 resource rootWorkloadRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
-  name: 'root-to-foundry'
+  name: 'root-to-workload'
   parent: healthModel
   properties: {
     parentEntityName: rootEntityName
@@ -379,5 +416,5 @@ resource workloadLogAnalyticsRelationship 'Microsoft.CloudHealth/healthmodels/re
 
 output workloadEntityName string = workloadEntity.name
 output configuredEntityCount int = 4
-output configuredSignalCount int = 5
+output configuredSignalCount int = 6
 output configuredRelationshipCount int = 5

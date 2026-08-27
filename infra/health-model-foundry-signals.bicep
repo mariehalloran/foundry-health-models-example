@@ -161,8 +161,8 @@ resource foundryEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-p
       iconName: 'Resource'
     }
     canvasPosition: {
-      x: -170
-      y: 150
+      x: -280
+      y: 170
     }
     healthObjective: 99
     alerts: {
