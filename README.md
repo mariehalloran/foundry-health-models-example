@@ -106,7 +106,7 @@ The ingress signal detects application HTTP 5xx responses in `ContainerAppHTTPLo
 ## Health Model structure
 
 ```text
-Health Model root
+Foundry Health Model Example
 ├── Microsoft Foundry
 ├── Azure Cosmos DB
 └── Clinical Trial Chat Workload

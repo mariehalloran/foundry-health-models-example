@@ -12,6 +12,10 @@ param foundryEntityName string
 @minLength(3)
 param rootEntityName string = 'foundry'
 
+@description('Display name for the Health Model root entity.')
+@minLength(3)
+param rootEntityDisplayName string = 'Foundry Health Model Example'
+
 @description('Container App name used to scope Log Analytics queries.')
 param containerAppName string
 
@@ -100,6 +104,28 @@ union result, (print IngressServerErrors = tolong(0))
 
 resource healthModel 'Microsoft.CloudHealth/healthmodels@2026-05-01-preview' existing = {
   name: healthModelName
+}
+
+resource rootEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-preview' = {
+  name: rootEntityName
+  parent: healthModel
+  properties: {
+    displayName: rootEntityDisplayName
+    impact: 'Standard'
+    canvasPosition: {
+      x: -10
+      y: 20
+    }
+    alerts: {
+      unhealthy: {
+        actionGroupIds: [
+          actionGroupResourceId
+        ]
+        description: '${rootEntityDisplayName} is unhealthy.'
+        severity: 'Sev1'
+      }
+    }
+  }
 }
 
 resource workloadEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-preview' = {
@@ -368,7 +394,7 @@ resource rootFoundryRelationship 'Microsoft.CloudHealth/healthmodels/relationshi
   name: 'root-to-foundry'
   parent: healthModel
   properties: {
-    parentEntityName: rootEntityName
+    parentEntityName: rootEntity.name
     childEntityName: foundryEntityName
     displayName: 'Health Model root to Microsoft Foundry'
   }
@@ -378,7 +404,7 @@ resource rootWorkloadRelationship 'Microsoft.CloudHealth/healthmodels/relationsh
   name: 'root-to-workload'
   parent: healthModel
   properties: {
-    parentEntityName: rootEntityName
+    parentEntityName: rootEntity.name
     childEntityName: workloadEntity.name
     displayName: 'Health Model root to workload'
   }
@@ -415,6 +441,6 @@ resource workloadLogAnalyticsRelationship 'Microsoft.CloudHealth/healthmodels/re
 }
 
 output workloadEntityName string = workloadEntity.name
-output configuredEntityCount int = 4
+output configuredEntityCount int = 5
 output configuredSignalCount int = 6
 output configuredRelationshipCount int = 5
