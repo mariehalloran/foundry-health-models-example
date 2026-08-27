@@ -129,6 +129,15 @@ resource appInsightsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-
   properties: {
     displayName: 'Application Insights - API'
     impact: 'Standard'
+    alerts: {
+      unhealthy: {
+        actionGroupIds: [
+          actionGroupResourceId
+        ]
+        description: 'Application Insights API health is unhealthy.'
+        severity: 'Sev3'
+      }
+    }
     icon: {
       iconName: 'AppService'
     }
@@ -197,6 +206,15 @@ resource openTelemetryEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-0
   properties: {
     displayName: 'OpenTelemetry - Content Safety'
     impact: 'Standard'
+    alerts: {
+      unhealthy: {
+        actionGroupIds: [
+          actionGroupResourceId
+        ]
+        description: 'OpenTelemetry content safety health is unhealthy.'
+        severity: 'Sev3'
+      }
+    }
     icon: {
       iconName: 'Resource'
     }
@@ -241,6 +259,15 @@ resource logAnalyticsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05
   properties: {
     displayName: 'Log Analytics - Runtime'
     impact: 'Standard'
+    alerts: {
+      unhealthy: {
+        actionGroupIds: [
+          actionGroupResourceId
+        ]
+        description: 'Log Analytics runtime health is unhealthy.'
+        severity: 'Sev3'
+      }
+    }
     icon: {
       iconName: 'Resource'
     }
