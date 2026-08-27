@@ -75,7 +75,7 @@ The workload uses worst-of dependency rollup. A dependency with `Standard` impac
 | --- | --- |
 | Microsoft Foundry | Resource Health, availability, time to last byte, harmful requests, content-filter blocks, and inference-token consumption |
 | Application Insights | API error rate and P95 request duration |
-| OpenTelemetry | Application-observed input content-filter rejections |
+| OpenTelemetry | Application-observed Foundry HTTP 5xx errors |
 | Log Analytics | Container runtime errors and ingress 5xx responses |
 
 The templates contain starter thresholds, not universal production defaults. Baseline your own traffic, latency, token volume, and safety behavior before selecting thresholds.

@@ -6,7 +6,7 @@ namespace ClinicalTrialChat.Api.Tests;
 public sealed class ChatTelemetryTests
 {
     [Fact]
-    public void RecordFoundryInputRejection_EmitsPrivacySafeCounter()
+    public void RecordFoundryServerError_EmitsPrivacySafeCounter()
     {
         long? measurement = null;
         using var listener = new MeterListener
@@ -15,7 +15,7 @@ public sealed class ChatTelemetryTests
             {
                 if (instrument.Meter.Name == ChatTelemetry.MeterName
                     && instrument.Name
-                        == ChatTelemetry.FoundryInputRejectionsMetricName)
+                        == ChatTelemetry.FoundryServerErrorsMetricName)
                 {
                     meterListener.EnableMeasurementEvents(instrument);
                 }
@@ -29,8 +29,21 @@ public sealed class ChatTelemetryTests
             });
         listener.Start();
 
-        ChatTelemetry.RecordFoundryInputRejection();
+        ChatTelemetry.RecordFoundryServerError();
 
         Assert.Equal(1, measurement);
+    }
+
+    [Theory]
+    [InlineData(499, false)]
+    [InlineData(500, true)]
+    [InlineData(503, true)]
+    public void IsFoundryServerError_MatchesAvailabilityMetricDefinition(
+        int statusCode,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            ChatTelemetry.IsFoundryServerError(statusCode));
     }
 }

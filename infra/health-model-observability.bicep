@@ -48,14 +48,14 @@ union result, (print P95DurationMs = toint(0))
 | summarize P95DurationMs = max(P95DurationMs)
 '''
 
-var otelContentFilterRejectionQuery = '''
+var otelFoundryServerErrorQuery = '''
 let result = AppMetrics
     | where TimeGenerated > ago(15m)
     | where AppRoleName endswith "clinical-trial-chat-api"
-    | where Name == "foundry.content_filter.input_rejections"
-    | summarize HarmfulInputRejections = toint(sum(Sum));
-union result, (print HarmfulInputRejections = toint(0))
-| summarize HarmfulInputRejections = max(HarmfulInputRejections)
+    | where Name == "foundry.server_errors"
+    | summarize FoundryServerErrors = toint(sum(Sum));
+union result, (print FoundryServerErrors = toint(0))
+| summarize FoundryServerErrors = max(FoundryServerErrors)
 '''
 
 var runtimeConsoleErrorQuery = replace('''
@@ -204,14 +204,14 @@ resource openTelemetryEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-0
   name: 'opentelemetry-dependencies'
   parent: healthModel
   properties: {
-    displayName: 'OpenTelemetry - Content Safety'
+    displayName: 'OpenTelemetry - Foundry'
     impact: 'Standard'
     alerts: {
       unhealthy: {
         actionGroupIds: [
           actionGroupResourceId
         ]
-        description: 'OpenTelemetry content safety health is unhealthy.'
+        description: 'OpenTelemetry Foundry dependency health is unhealthy.'
         severity: 'Sev3'
       }
     }
@@ -228,11 +228,11 @@ resource openTelemetryEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-0
         logAnalyticsWorkspaceResourceId: logAnalyticsWorkspaceResourceId
         signals: [
           {
-            name: 'otel-harmful-input-rejections'
-            displayName: 'OpenTelemetry input content-filter rejections'
+            name: 'otel-foundry-server-errors'
+            displayName: 'OpenTelemetry Foundry HTTP 5xx errors'
             signalKind: 'LogAnalyticsQuery'
-            queryText: otelContentFilterRejectionQuery
-            valueColumnName: 'HarmfulInputRejections'
+            queryText: otelFoundryServerErrorQuery
+            valueColumnName: 'FoundryServerErrors'
             dataUnit: 'Count'
             timeGrain: 'PT15M'
             refreshInterval: 'PT5M'

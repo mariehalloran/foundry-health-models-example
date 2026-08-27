@@ -103,7 +103,7 @@ The deployable signals intentionally aggregate at the Foundry account level. Thi
 
 The `2026-05-01-preview` entity schema exposes raw `dimensionFilter` text but no separate `dimension` property. The portal documentation supports selecting a dimension and filter, but raw ARM filter expressions didn't round-trip reliably through the preview editor for this sample and could leave the evaluator in `Unknown`. The template therefore leaves `dimensionFilter` unset.
 
-Status-specific 4xx, 5xx, and 429 signals were removed for the same compatibility reason. Availability already captures server-error impact, while the application error-rate signal captures failed API requests and the custom OpenTelemetry signal identifies application-observed input content-filter rejections. Add status-specific rates as zero-guarded KQL signals after exporting `AzureOpenAIRequests` to Log Analytics.
+Status-specific 4xx, 5xx, and 429 platform-metric signals were removed for the same compatibility reason. Availability already captures server-error impact, while the custom OpenTelemetry signal provides an independent application-observed Foundry server-error count without relying on metric dimension filters. Add status-specific rates as zero-guarded KQL signals after exporting `AzureOpenAIRequests` to Log Analytics.
 
 ### Synthetic metric population
 
@@ -121,11 +121,11 @@ The probe doesn't guarantee a healthy signal. Foundry 5xx responses lower `Azure
 | --- | --- | --- | --- |
 | Application Insights | API error rate from `AppRequests` | `> 1%` | `> 5%` |
 | Application Insights | API P95 duration from `AppRequests` | `> 15,000 ms` | `> 30,000 ms` |
-| OpenTelemetry | Input content-filter rejections from `foundry.content_filter.input_rejections` in `AppMetrics` | `> 0` | `> 3` |
+| OpenTelemetry | Foundry HTTP 5xx errors from `foundry.server_errors` in `AppMetrics` | `> 0` | `> 3` |
 | Log Analytics | Container runtime errors from `ContainerAppConsoleLogs_CL` | `> 5` | `> 20` |
 | Log Analytics | Container ingress 5xx responses from `ContainerAppHTTPLogs` (conditional) | `> 0` | `> 5` |
 
-The application emits the `foundry.content_filter.input_rejections` counter when Foundry rejects an input with `content_filter` or `ResponsibleAIPolicyViolation`. The metric contains no prompt text, user ID, content category, or other high-cardinality attributes. It is narrower than the account-level `RAIRejectedRequests` platform metric: the custom counter covers only input rejections observed by this API, while the platform metric covers all Foundry content-filter blocks.
+The application emits the `foundry.server_errors` counter when the OpenAI client surfaces a Foundry response with an HTTP status code of 500 or greater. The metric contains no prompt text, user ID, response body, or other high-cardinality attributes. It intentionally corroborates `AzureOpenAIAvailabilityRate`, whose server-error definition also includes responses with status codes of 500 or greater. The scopes differ: the custom counter covers failures observed by this API and uses count thresholds, while the platform availability rate covers all requests to the Foundry account.
 
 Custom dependency spans are also emitted for Foundry and Cosmos operations. They are diagnostic telemetry only; the current templates don't query those spans as health signals and don't create a Cosmos DB entity. The workload uses `WorstOf` dependency rollup with `ignoreUnknown: true`. The observability template adds workload state alerts; Foundry state alerts come from the Foundry signal template.
 
@@ -138,7 +138,7 @@ Health Model root
 └── Clinical Trial Chat Workload (Standard, workload alerts)
     ├── Microsoft Foundry (Standard, Resource Health, inference, safety, and usage signals)
     ├── Application Insights - API (Standard)
-    ├── OpenTelemetry - Content Safety (Standard)
+    ├── OpenTelemetry - Foundry (Standard)
     ├── Log Analytics - Runtime (Standard)
     └── Azure Monitor Alerting (Suppressed)
 ```

@@ -49,9 +49,9 @@ public sealed class AzureFoundryChatService(
                 cancellationToken);
         }
         catch (ClientResultException exception)
-            when (FoundryContentFilterDetector.IsInputRejection(exception))
+            when (ChatTelemetry.IsFoundryServerError(exception.Status))
         {
-            ChatTelemetry.RecordFoundryInputRejection();
+            ChatTelemetry.RecordFoundryServerError();
             throw;
         }
 

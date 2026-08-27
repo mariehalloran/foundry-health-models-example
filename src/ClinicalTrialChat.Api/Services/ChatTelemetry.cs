@@ -7,22 +7,24 @@ public static class ChatTelemetry
 {
     public const string ActivitySourceName = "ClinicalTrialChat.Api";
     public const string MeterName = "ClinicalTrialChat.Api";
-    public const string FoundryInputRejectionsMetricName =
-        "foundry.content_filter.input_rejections";
+    public const string FoundryServerErrorsMetricName = "foundry.server_errors";
 
     public static ActivitySource ActivitySource { get; } =
         new(ActivitySourceName);
 
     private static Meter Meter { get; } = new(MeterName);
 
-    private static Counter<long> FoundryInputRejections { get; } =
+    private static Counter<long> FoundryServerErrors { get; } =
         Meter.CreateCounter<long>(
-            FoundryInputRejectionsMetricName,
+            FoundryServerErrorsMetricName,
             unit: "{request}",
-            description: "Foundry requests rejected because the input triggered content filters.");
+            description: "Foundry requests that returned an HTTP server error.");
 
-    public static void RecordFoundryInputRejection() =>
-        FoundryInputRejections.Add(1);
+    public static void RecordFoundryServerError() =>
+        FoundryServerErrors.Add(1);
+
+    internal static bool IsFoundryServerError(int statusCode) =>
+        statusCode >= 500;
 
     public static Activity? StartDependency(
         string operationName,

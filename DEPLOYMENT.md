@@ -415,6 +415,8 @@ The Foundry token-usage signal defaults to degraded above 25,000 inference token
 
 Deploy the layered observability template after the Foundry signal template. It makes the workload depend on Foundry, Application Insights, OpenTelemetry dependencies, and Log Analytics runtime signals. Degraded and unhealthy workload states notify the same action group.
 
+The OpenTelemetry signal counts Foundry HTTP 5xx responses surfaced to the API through the `foundry.server_errors` metric. It intentionally corroborates the account-level `AzureOpenAIAvailabilityRate` signal, although the custom metric covers only application-observed requests and uses count thresholds.
+
 The base deployment sends console logs to Log Analytics but doesn't enable Container Apps HTTP diagnostic logs. The `ContainerAppHTTPLogs`-based ingress 5xx signal remains `Unknown` until HTTP logs are enabled on the managed environment. Review the [HTTP log schema](https://learn.microsoft.com/azure/container-apps/log-monitoring#http-logs), including its path, user-agent, and client-IP fields, and the additional ingestion cost before enabling that diagnostic category.
 
 ```bash
