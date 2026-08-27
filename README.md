@@ -115,6 +115,8 @@ Foundry Health Model Example
     └── Log Analytics - Runtime
 ```
 
+![Azure Monitor Health Model graph showing Foundry, Cosmos DB, and the clinical trial workload](docs/images/foundry-health-model.png)
+
 The root directly parents the existing Foundry, Cosmos DB, and workload entities. The observability template manages those relationships but does not replace the existing Cosmos DB entity. The workload uses `WorstOf` dependency rollup with `ignoreUnknown: true` for its Application Insights, OpenTelemetry, and Log Analytics children. Alerts reference the shared Azure Monitor action group directly; the action group is not modeled as an entity because action groups expose no evaluatable metric or Resource Health signal.
 
 ## Deploy
