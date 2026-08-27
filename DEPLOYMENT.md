@@ -271,13 +271,15 @@ Preview the role assignment:
 
 ```bash
 resource_group="$(azd env get-value AZURE_RESOURCE_GROUP_NAME)"
+log_analytics_workspace_name="$(azd env get-value LOG_ANALYTICS_WORKSPACE_NAME)"
 
 az deployment group what-if \
   --resource-group "$resource_group" \
   --template-file infra/health-model-metrics.bicep \
   --parameters \
     healthModelName="<your-health-model-name>" \
-    healthModelResourceGroupName="<health-model-resource-group>"
+    healthModelResourceGroupName="<health-model-resource-group>" \
+    logAnalyticsWorkspaceName="$log_analytics_workspace_name"
 ```
 
 Apply it:
@@ -289,7 +291,8 @@ az deployment group create \
   --template-file infra/health-model-metrics.bicep \
   --parameters \
     healthModelName="<your-health-model-name>" \
-    healthModelResourceGroupName="<health-model-resource-group>"
+    healthModelResourceGroupName="<health-model-resource-group>" \
+    logAnalyticsWorkspaceName="$log_analytics_workspace_name"
 ```
 
 The deployment scope is the resource group whose metrics the health model must read. Repeat the deployment for each additional monitored resource group. RBAC changes can take several minutes to propagate before the Health Model UI can read metrics.
@@ -375,6 +378,8 @@ The Foundry token-usage signal defaults to degraded above 25,000 inference token
 ### Configure workload rollup and application observability
 
 Deploy the layered observability template after the Foundry signal template. It makes the workload depend on Foundry, Application Insights, OpenTelemetry dependencies, and Log Analytics runtime signals. Degraded and unhealthy workload states notify the same action group.
+
+The base deployment sends console logs to Log Analytics but doesn't enable Container Apps HTTP diagnostic logs. The `ContainerAppHTTPLogs`-based ingress 5xx signal remains `Unknown` until HTTP logs are enabled on the managed environment. Review the [HTTP log schema](https://learn.microsoft.com/azure/container-apps/log-monitoring#http-logs), including its path, user-agent, and client-IP fields, and the additional ingestion cost before enabling that diagnostic category.
 
 ```bash
 container_app_name="$(azd env get-value SERVICE_CHAT_RESOURCE_NAME)"
