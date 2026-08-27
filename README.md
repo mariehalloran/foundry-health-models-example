@@ -12,7 +12,7 @@ The project configures 10 threshold-based signals plus Azure Resource Health. Ea
 
 The thresholds are starting points, not universal production defaults. Baseline your own traffic, latency, token volume, and failure patterns before changing an entity's production health state.
 
-Application Insights and Log Analytics ingestion can still add several minutes before a trace, metric, or log record becomes available to the Health Model. A one-minute query window prioritizes fast state changes but can miss telemetry that arrives late; widen the window if production ingestion latency makes signals intermittent.
+A one-minute query window prioritizes fast state changes but can miss telemetry that arrives late; widen the window if production ingestion latency makes signals intermittent.
 
 | Health Model entity | Signal | Azure Monitor source | Degraded | Unhealthy |
 | --- | --- | --- | --- | --- |

@@ -55,6 +55,7 @@ resource appInsightsConnection 'Microsoft.CognitiveServices/accounts/projects/co
     isSharedToAll: true
     metadata: {
       ApiType: 'Azure'
+      ApplicationInsightsConnectionString: appInsights.properties.ConnectionString
       ResourceId: appInsights.id
     }
     target: appInsights.id
