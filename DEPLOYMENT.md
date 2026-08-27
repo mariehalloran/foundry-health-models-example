@@ -295,6 +295,38 @@ az containerapp job logs show \
 
 A successful run logs `Foundry synthetic probe succeeded` with the elapsed request time and Foundry request ID. A failed HTTP response, empty response, or timeout makes the job execution fail.
 
+## Verify Foundry client tracing
+
+The deployed chat application enables the OpenAI .NET SDK's experimental OpenTelemetry instrumentation and exports the `OpenAI.ChatClient` source and meter to Application Insights. Prompt and response content are not captured.
+
+Send a chat request, wait several minutes for ingestion, and query the workspace:
+
+```bash
+resource_group="$(azd env get-value AZURE_RESOURCE_GROUP_NAME)"
+workspace_name="$(azd env get-value LOG_ANALYTICS_WORKSPACE_NAME)"
+workspace_customer_id="$(
+  az monitor log-analytics workspace show \
+    --resource-group "$resource_group" \
+    --workspace-name "$workspace_name" \
+    --query customerId \
+    --output tsv
+)"
+
+az monitor log-analytics query \
+  --workspace "$workspace_customer_id" \
+  --analytics-query '
+    AppDependencies
+    | where TimeGenerated > ago(30m)
+    | where AppRoleName endswith "clinical-trial-chat-api"
+    | where Name startswith "chat "
+    | project TimeGenerated, Name, Target, Success, DurationMs, Properties
+    | order by TimeGenerated desc
+  ' \
+  --output table
+```
+
+The Foundry project is connected to the same Application Insights resource with project-managed-identity authentication. Because this application calls `ChatClient` directly rather than running a Foundry agent, use Application Insights to inspect these client spans. Agent-specific views require a Foundry agent or workflow that emits `gen_ai.agent.*` attributes.
+
 ## Grant an Azure Health Model access to metrics
 
 Azure platform metrics are collected automatically and do not require diagnostic settings. A `Microsoft.CloudHealth/healthmodels` resource reads those metrics through its managed identity, which needs Azure RBAC access to the monitored resources.
@@ -403,7 +435,7 @@ The template intentionally uses account-level Foundry metrics without `dimension
 
 The scheduled job sends one synthetic request per minute into these same account-level metrics. It keeps low-traffic windows populated but doesn't force the availability signal to healthy: a Foundry 5xx lowers `AzureOpenAIAvailabilityRate`, while a job failure before the request reaches Foundry can still leave missing metric data. Review Container Apps Job execution history when the Foundry signal is `Unknown`.
 
-The Foundry token-usage signal defaults to degraded above 25,000 inference tokens per 15 minutes and unhealthy above 50,000. Override these starter thresholds after baselining:
+The Foundry token-usage signal defaults to degraded above 25,000 inference tokens per minute and unhealthy above 50,000. Override these starter thresholds after baselining:
 
 ```bash
 --parameters \

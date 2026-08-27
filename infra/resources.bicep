@@ -320,6 +320,15 @@ resource foundryProject 'Microsoft.CognitiveServices/accounts/projects@2025-06-0
   }
 }
 
+module foundryTracing 'foundry-tracing.bicep' = {
+  name: 'foundry-tracing'
+  params: {
+    foundryAccountName: foundry.name
+    foundryProjectName: foundryProject.name
+    appInsightsName: observability.outputs.appInsightsName
+  }
+}
+
 resource modelDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
   name: modelDeploymentName
   parent: foundry
@@ -633,6 +642,14 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
               name: 'OTEL_SERVICE_NAME'
               value: 'clinical-trial-chat-api'
             }
+            {
+              name: 'OPENAI_EXPERIMENTAL_ENABLE_OPEN_TELEMETRY'
+              value: 'true'
+            }
+            {
+              name: 'OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT'
+              value: 'false'
+            }
           ]
           resources: {
             cpu: json('0.25')
@@ -700,6 +717,7 @@ output virtualNetworkName string = virtualNetwork.name
 output foundryEndpoint string = 'https://${foundry.name}.openai.azure.com/'
 output modelDeploymentName string = modelDeployment.name
 output foundryProjectName string = foundryProject.name
+output foundryAppInsightsConnectionName string = foundryTracing.outputs.connectionName
 output foundryPrivateEndpointName string = foundryPrivateEndpoint.name
 output cosmosEndpoint string = cosmosAccount.properties.documentEndpoint
 output cosmosDatabaseName string = cosmosDatabase.name

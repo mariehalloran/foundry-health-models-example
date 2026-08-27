@@ -44,9 +44,13 @@ if (!string.IsNullOrWhiteSpace(appInsightsConnectionString))
             serviceNamespace: "clinical-trial-chat",
             serviceInstanceId: Environment.MachineName));
     builder.Services.ConfigureOpenTelemetryTracerProvider(
-        (_, tracing) => tracing.AddSource(ChatTelemetry.ActivitySourceName));
+        (_, tracing) => tracing
+            .AddSource(ChatTelemetry.ActivitySourceName)
+            .AddSource(ChatTelemetry.OpenAiTelemetryName));
     builder.Services.ConfigureOpenTelemetryMeterProvider(
-        (_, metrics) => metrics.AddMeter(ChatTelemetry.MeterName));
+        (_, metrics) => metrics
+            .AddMeter(ChatTelemetry.MeterName)
+            .AddMeter(ChatTelemetry.OpenAiTelemetryName));
 }
 
 builder.Services.AddCors(options =>

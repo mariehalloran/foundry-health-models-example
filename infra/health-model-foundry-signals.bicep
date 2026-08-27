@@ -21,11 +21,11 @@ param authenticationSettingName string = 'systemassigned'
 @description('Entity display name.')
 param foundryEntityDisplayName string = 'Microsoft Foundry'
 
-@description('Inference-token count in 15 minutes that degrades the Foundry entity.')
+@description('Inference-token count in one minute that degrades the Foundry entity.')
 @minValue(1)
 param tokenUsageDegradedThreshold int = 25000
 
-@description('Inference-token count in 15 minutes that makes the Foundry entity unhealthy.')
+@description('Inference-token count in one minute that makes the Foundry entity unhealthy.')
 @minValue(1)
 param tokenUsageUnhealthyThreshold int = 50000
 
@@ -40,8 +40,8 @@ var coreSignals = [
     metricName: 'AzureOpenAIAvailabilityRate'
     aggregationType: 'Average'
     dataUnit: 'Percent'
-    timeGrain: 'PT15M'
-    refreshInterval: 'PT5M'
+    timeGrain: 'PT1M'
+    refreshInterval: 'PT1M'
     evaluationRules: {
       degradedRule: {
         operator: 'LessThan'
@@ -61,8 +61,8 @@ var coreSignals = [
     metricName: 'AzureOpenAITTLTInMS'
     aggregationType: 'Average'
     dataUnit: 'MilliSeconds'
-    timeGrain: 'PT15M'
-    refreshInterval: 'PT5M'
+    timeGrain: 'PT1M'
+    refreshInterval: 'PT1M'
     evaluationRules: {
       degradedRule: {
         operator: 'GreaterThan'
@@ -85,8 +85,8 @@ var safetySignals = [
     metricName: 'RAIHarmfulRequests'
     aggregationType: 'Total'
     dataUnit: 'Count'
-    timeGrain: 'PT15M'
-    refreshInterval: 'PT5M'
+    timeGrain: 'PT1M'
+    refreshInterval: 'PT1M'
     evaluationRules: {
       degradedRule: {
         operator: 'GreaterThan'
@@ -106,8 +106,8 @@ var safetySignals = [
     metricName: 'RAIRejectedRequests'
     aggregationType: 'Total'
     dataUnit: 'Count'
-    timeGrain: 'PT15M'
-    refreshInterval: 'PT5M'
+    timeGrain: 'PT1M'
+    refreshInterval: 'PT1M'
     evaluationRules: {
       degradedRule: {
         operator: 'GreaterThan'
@@ -130,8 +130,8 @@ var usageSignals = [
     metricName: 'TokenTransaction'
     aggregationType: 'Total'
     dataUnit: 'Count'
-    timeGrain: 'PT15M'
-    refreshInterval: 'PT5M'
+    timeGrain: 'PT1M'
+    refreshInterval: 'PT1M'
     evaluationRules: {
       degradedRule: {
         operator: 'GreaterThan'

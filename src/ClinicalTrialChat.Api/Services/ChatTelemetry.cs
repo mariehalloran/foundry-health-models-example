@@ -7,6 +7,7 @@ public static class ChatTelemetry
 {
     public const string ActivitySourceName = "ClinicalTrialChat.Api";
     public const string MeterName = "ClinicalTrialChat.Api";
+    public const string OpenAiTelemetryName = "OpenAI.ChatClient";
     public const string FoundryServerErrorsMetricName = "foundry.server_errors";
 
     public static ActivitySource ActivitySource { get; } =

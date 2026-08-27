@@ -49,19 +49,10 @@ public sealed class ChatCoordinator(
             memoryActivity?.SetTag("conversation.message.count", history.Count);
         }
 
-        string reply;
-        using (var modelActivity = ChatTelemetry.StartDependency(
-                   "foundry.chat.complete",
-                   "Microsoft Foundry",
-                   "gpt-chat"))
-        {
-            modelActivity?.SetTag("gen_ai.system", "azure.openai");
-            modelActivity?.SetTag("gen_ai.operation.name", "chat");
-            reply = await foundryChatService.GetReplyAsync(
-                history,
-                message,
-                cancellationToken);
-        }
+        var reply = await foundryChatService.GetReplyAsync(
+            history,
+            message,
+            cancellationToken);
 
         var createdAt = timeProvider.GetUtcNow();
         var userMessage = new ConversationMessage

@@ -30,7 +30,7 @@ param authenticationSettingName string = 'systemassigned'
 
 var apiErrorRateQuery = '''
 let result = AppRequests
-    | where TimeGenerated > ago(15m)
+    | where TimeGenerated > ago(1m)
     | where AppRoleName endswith "clinical-trial-chat-api"
     | summarize Total = sum(ItemCount), Failed = sumif(ItemCount, Success == false)
     | extend ErrorRateBasisPoints = toint(iff(Total == 0, 0.0, todouble(Failed) / todouble(Total) * 10000.0))
@@ -41,7 +41,7 @@ union result, (print ErrorRateBasisPoints = toint(0))
 
 var apiP95DurationQuery = '''
 let result = AppRequests
-    | where TimeGenerated > ago(15m)
+    | where TimeGenerated > ago(1m)
     | where AppRoleName endswith "clinical-trial-chat-api"
     | summarize P95DurationMs = toint(coalesce(percentile(DurationMs, 95), 0.0));
 union result, (print P95DurationMs = toint(0))
@@ -50,7 +50,7 @@ union result, (print P95DurationMs = toint(0))
 
 var otelFoundryServerErrorQuery = '''
 let result = AppMetrics
-    | where TimeGenerated > ago(15m)
+    | where TimeGenerated > ago(1m)
     | where AppRoleName endswith "clinical-trial-chat-api"
     | where Name == "foundry.server_errors"
     | summarize FoundryServerErrors = toint(sum(Sum));
@@ -60,7 +60,7 @@ union result, (print FoundryServerErrors = toint(0))
 
 var runtimeConsoleErrorQuery = replace('''
 let result = ContainerAppConsoleLogs_CL
-    | where TimeGenerated > ago(15m)
+    | where TimeGenerated > ago(1m)
     | where ContainerAppName_s == "{{containerAppName}}"
     | where Stream_s =~ "stderr"
         or Log_s has "fail:"
@@ -72,7 +72,7 @@ union result, (print RuntimeErrors = tolong(0))
 
 var ingressServerErrorQuery = replace('''
 let result = ContainerAppHTTPLogs
-    | where TimeGenerated > ago(15m)
+    | where TimeGenerated > ago(1m)
     | where ContainerAppName == "{{containerAppName}}"
     | where StatusCode >= 500
     | summarize IngressServerErrors = count();
@@ -161,8 +161,8 @@ resource appInsightsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-
             queryText: apiErrorRateQuery
             valueColumnName: 'ErrorRateBasisPoints'
             dataUnit: 'BasisPoints'
-            timeGrain: 'PT15M'
-            refreshInterval: 'PT5M'
+            timeGrain: 'PT1M'
+            refreshInterval: 'PT1M'
             evaluationRules: {
               degradedRule: {
                 operator: 'GreaterThan'
@@ -181,8 +181,8 @@ resource appInsightsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-
             queryText: apiP95DurationQuery
             valueColumnName: 'P95DurationMs'
             dataUnit: 'MilliSeconds'
-            timeGrain: 'PT15M'
-            refreshInterval: 'PT5M'
+            timeGrain: 'PT1M'
+            refreshInterval: 'PT1M'
             evaluationRules: {
               degradedRule: {
                 operator: 'GreaterThan'
@@ -234,8 +234,8 @@ resource openTelemetryEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-0
             queryText: otelFoundryServerErrorQuery
             valueColumnName: 'FoundryServerErrors'
             dataUnit: 'Count'
-            timeGrain: 'PT15M'
-            refreshInterval: 'PT5M'
+            timeGrain: 'PT1M'
+            refreshInterval: 'PT1M'
             evaluationRules: {
               degradedRule: {
                 operator: 'GreaterThan'
@@ -287,8 +287,8 @@ resource logAnalyticsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05
             queryText: runtimeConsoleErrorQuery
             valueColumnName: 'RuntimeErrors'
             dataUnit: 'Count'
-            timeGrain: 'PT15M'
-            refreshInterval: 'PT5M'
+            timeGrain: 'PT1M'
+            refreshInterval: 'PT1M'
             evaluationRules: {
               degradedRule: {
                 operator: 'GreaterThan'
@@ -307,8 +307,8 @@ resource logAnalyticsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05
             queryText: ingressServerErrorQuery
             valueColumnName: 'IngressServerErrors'
             dataUnit: 'Count'
-            timeGrain: 'PT15M'
-            refreshInterval: 'PT5M'
+            timeGrain: 'PT1M'
+            refreshInterval: 'PT1M'
             evaluationRules: {
               degradedRule: {
                 operator: 'GreaterThan'

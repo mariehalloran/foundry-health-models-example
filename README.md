@@ -8,9 +8,11 @@ The included chat application and scheduled probe generate realistic telemetry. 
 
 ## Available Azure Health Model signals
 
-The project configures 10 threshold-based signals plus Azure Resource Health. Unless noted otherwise, each threshold signal evaluates a 15-minute window and refreshes every five minutes.
+The project configures 10 threshold-based signals plus Azure Resource Health. Each threshold signal evaluates a one-minute window and refreshes every minute so newly ingested failures affect health as quickly as the preview service allows.
 
 The thresholds are starting points, not universal production defaults. Baseline your own traffic, latency, token volume, and failure patterns before changing an entity's production health state.
+
+Application Insights and Log Analytics ingestion can still add several minutes before a trace, metric, or log record becomes available to the Health Model. A one-minute query window prioritizes fast state changes but can miss telemetry that arrives late; widen the window if production ingestion latency makes signals intermittent.
 
 | Health Model entity | Signal | Azure Monitor source | Degraded | Unhealthy |
 | --- | --- | --- | --- | --- |
@@ -88,6 +90,10 @@ These signals describe application behavior, not only Foundry behavior. For exam
 
 The metric includes no prompt text, response body, user ID, status-code attribute, or other high-cardinality data. It is exported to Application Insights and queried from `AppMetrics`.
 
+The deployed application also enables the OpenAI .NET SDK's experimental OpenTelemetry instrumentation for the actual `ChatClient` request. It subscribes to the `OpenAI.ChatClient` activity source and meter, which emit a client span, operation duration, token usage, response model, response ID, finish reason, and error status using `gen_ai.*` semantic-convention attributes. Message-content capture remains disabled.
+
+The Microsoft Foundry tracing article recommends server-side tracing for prompt and hosted agents. This sample is not a hosted agent: it invokes a Foundry model directly through `ChatClient`, so it uses client-side SDK instrumentation instead. The infrastructure connects the existing Application Insights resource to the Foundry project with project-managed-identity authentication and grants the project identity permission to publish telemetry. Direct model traces are available in Application Insights; agent-specific Foundry dashboards still require a Foundry agent or workflow that emits `gen_ai.agent.*` attributes.
+
 ### Log Analytics
 
 The runtime signal detects stderr records, failed log entries, and unhandled exceptions in `ContainerAppConsoleLogs_CL`.
@@ -128,6 +134,7 @@ The Health Model templates are separate from the main application deployment so 
 | [`infra/health-model-foundry-signals.bicep`](infra/health-model-foundry-signals.bicep) | Adds Foundry platform metrics and Resource Health to an existing Foundry entity |
 | [`infra/health-model-observability.bicep`](infra/health-model-observability.bicep) | Adds the workload hierarchy, application signals, relationships, and alerts |
 | [`infra/foundry-health-probe.bicep`](infra/foundry-health-probe.bicep) | Creates the optional one-minute Foundry availability probe |
+| [`infra/foundry-tracing.bicep`](infra/foundry-tracing.bicep) | Connects Application Insights to Foundry with project-managed-identity ingestion |
 
 See [`DEPLOYMENT.md`](DEPLOYMENT.md) for parameter discovery, preview commands, local development, validation, troubleshooting, and cleanup.
 
@@ -142,6 +149,7 @@ Always run a Bicep `what-if` or `azd provision --preview` before applying infras
 ## References
 
 - [Azure OpenAI monitoring data reference](https://learn.microsoft.com/azure/foundry/openai/monitor-openai-reference)
+- [Set up tracing in Microsoft Foundry](https://learn.microsoft.com/azure/foundry/observability/how-to/trace-agent-setup)
 - [Azure Monitor Health Model concepts](https://learn.microsoft.com/azure/azure-monitor/health-models/concepts)
 - [Configure signals in Azure Monitor Health Models](https://learn.microsoft.com/azure/azure-monitor/health-models/signals)
 - [Azure Container Apps logs](https://learn.microsoft.com/azure/container-apps/log-monitoring)
