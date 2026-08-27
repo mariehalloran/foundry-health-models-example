@@ -333,7 +333,7 @@ The deployment scope is the resource group whose metrics the health model must r
 
 ### Configure the Foundry entity signals
 
-Review [FOUNDRY_HEALTH_SIGNALS.md](docs/FOUNDRY_HEALTH_SIGNALS.md) before applying the signal template. The signal template performs a full update of the existing Foundry entity, so signals not declared in the template are removed. It doesn't create any additional Health Model entities or relationships.
+Review the [available Azure Health Model signals](README.md#available-azure-health-model-signals) before applying the signal template. The signal template performs a full update of the existing Foundry entity, so signals not declared in the template are removed. It doesn't create any additional Health Model entities or relationships.
 
 Discover the required values without hardcoding resource IDs:
 

@@ -1,110 +1,116 @@
 # Azure Health Models for Microsoft Foundry
 
-This repository is a reference implementation for adding Azure Monitor Health Models to a Microsoft Foundry workload. It demonstrates how to turn Foundry platform metrics, application telemetry, logs, dependencies, and alerts into one workload-level health model.
+This repository is a reference implementation for monitoring a Microsoft Foundry chat workload with Azure Monitor Health Models. It combines Foundry platform metrics, Azure Resource Health, Application Insights, OpenTelemetry, and Log Analytics into one workload-level health view.
 
-The included chat application exists to generate realistic telemetry. Replace it with your own Foundry application while reusing the Health Model patterns and Bicep templates.
+The included chat application and scheduled probe generate realistic telemetry. Reuse the signal patterns and Bicep templates with your own Foundry workload.
 
-> Azure Monitor Health Models and the `Microsoft.CloudHealth` API used by this sample are in preview. Review every deployment and validate the signal behavior before using it in production.
+> Azure Monitor Health Models and the `Microsoft.CloudHealth` API used by this sample are in preview. Validate signal behavior and tune every threshold before using the model in production.
 
-## What this example provides
+## Available Azure Health Model signals
 
-- Foundry availability, latency, responsible AI, token usage, and Azure Resource Health signals.
-- Application Insights signals for request failures and latency.
-- A custom OpenTelemetry signal exported through Application Insights.
-- Log Analytics signals for runtime and ingress failures.
-- A workload entity that rolls up the health of its dependencies.
-- Entity-state alerts delivered through an Azure Monitor action group.
-- A scheduled synthetic request that keeps Foundry metrics populated for low-traffic workloads.
-- Standalone RBAC deployment for Health Model access to metrics and logs.
+The project configures 10 threshold-based signals plus Azure Resource Health. Unless noted otherwise, each threshold signal evaluates a 15-minute window and refreshes every five minutes.
 
-## Architecture
+The thresholds are starting points, not universal production defaults. Baseline your own traffic, latency, token volume, and failure patterns before changing an entity's production health state.
 
-```mermaid
-flowchart LR
-    user["Application traffic"] --> app["Sample application"]
-    app --> foundry["Microsoft Foundry"]
-    probe["Scheduled synthetic probe"] --> foundry
+| Health Model entity | Signal | Azure Monitor source | Degraded | Unhealthy |
+| --- | --- | --- | --- | --- |
+| Microsoft Foundry | Resource health | Azure Resource Health | Azure-reported state | Azure-reported state |
+| Microsoft Foundry | Foundry availability | `AzureOpenAIAvailabilityRate` | `< 99%` | `< 95%` |
+| Microsoft Foundry | Time to last byte | `AzureOpenAITTLTInMS` | `> 500 ms` | `> 10,000 ms` |
+| Microsoft Foundry | Harmful requests detected | `RAIHarmfulRequests` | `> 0` | `> 5` |
+| Microsoft Foundry | Requests blocked by content filters | `RAIRejectedRequests` | `> 0` | `> 10` |
+| Microsoft Foundry | Inference-token consumption | `TokenTransaction` | `> 25,000` | `> 50,000` |
+| Application Insights | API error rate | `AppRequests` KQL query | `> 1%` | `> 5%` |
+| Application Insights | API P95 duration | `AppRequests` KQL query | `> 15,000 ms` | `> 30,000 ms` |
+| OpenTelemetry | Application-observed Foundry HTTP 5xx errors | `foundry.server_errors` in `AppMetrics` | `> 0` | `> 3` |
+| Log Analytics | Container runtime errors | `ContainerAppConsoleLogs_CL` KQL query | `> 5` | `> 20` |
+| Log Analytics | Container ingress HTTP 5xx responses | `ContainerAppHTTPLogs` KQL query | `> 0` | `> 5` |
 
-    app --> appInsights["Application Insights<br/>OpenTelemetry"]
-    app --> logs["Log Analytics"]
+The Foundry platform signals are configured in [`infra/health-model-foundry-signals.bicep`](infra/health-model-foundry-signals.bicep). The application, OpenTelemetry, and Log Analytics signals are configured in [`infra/health-model-observability.bicep`](infra/health-model-observability.bicep).
 
-    subgraph healthModel["Azure Monitor Health Model"]
-        root["Health Model root"]
-        workload["Workload"]
-        foundryEntity["Microsoft Foundry"]
-        appEntity["Application Insights"]
-        otelEntity["OpenTelemetry"]
-        logsEntity["Log Analytics"]
-        alertingEntity["Azure Monitor Alerting<br/>suppressed from rollup"]
+### Foundry availability and idle traffic
 
-        root --> workload
-        workload --> foundryEntity
-        workload --> appEntity
-        workload --> otelEntity
-        workload --> logsEntity
-        workload --> alertingEntity
-    end
+`AzureOpenAIAvailabilityRate` is calculated as:
 
-    foundry -. "platform metrics and Resource Health" .-> foundryEntity
-    appInsights -. "KQL signals" .-> appEntity
-    appInsights -. "custom metric" .-> otelEntity
-    logs -. "KQL signals" .-> logsEntity
-
-    workload -. "health-state alerts" .-> actionGroup["Azure Monitor action group"]
-    foundryEntity -. "health-state alerts" .-> actionGroup
-    actionGroup --> operator["Operator"]
+```text
+(Total Calls - Server Errors) / Total Calls
 ```
 
-## Health Model design
+Server errors include Foundry responses with HTTP status codes of 500 or greater. When no requests reach Foundry during an evaluation window, the metric has no request denominator and can appear as `0%` or no data. Depending on Health Model evaluation behavior, this can make the signal look unhealthy or `Unknown` even though Foundry has not returned an error.
+
+There are two ways to avoid treating an idle workload as a Foundry outage:
+
+#### Option 1: Keep the Foundry availability signal populated with a probe
+
+[`infra/foundry-health-probe.bicep`](infra/foundry-health-probe.bicep) deploys a scheduled Container Apps Job that sends one direct chat-completion request to Foundry every minute. This keeps `AzureOpenAIAvailabilityRate` populated and exercises the managed identity, private network, DNS, and Foundry request path.
+
+The probe does not test the frontend, application API, or Cosmos DB. It also consumes Container Apps execution time and Foundry tokens, so include that synthetic traffic in cost and capacity planning.
+
+#### Option 2: Mimic availability health with OpenTelemetry
+
+The application emits the `foundry.server_errors` counter whenever its OpenAI client receives a Foundry response with a status code of 500 or greater. The Health Model KQL query returns zero when the application observes no matching server errors, so an idle interval does not become an artificial availability failure.
+
+This is a count-based mimic of the native availability signal's failure semantics, not the same percentage calculation:
+
+- `AzureOpenAIAvailabilityRate` covers all requests to the Foundry account.
+- `foundry.server_errors` covers only requests made by this application.
+- The OTEL signal detects application-observed 5xx responses but does not independently prove Foundry is reachable when there is no traffic.
+
+Use the probe when you need the native account-level availability metric and an active end-to-end Foundry check. Use the OTEL signal when application-observed server failures are sufficient and you want idle windows to evaluate as zero errors. You can keep both for correlated coverage, but they intentionally report overlapping Foundry 5xx failures.
+
+### Foundry latency
+
+`AzureOpenAITTLTInMS` measures the time from sending a request until the last response byte arrives. It is the appropriate end-to-end latency signal for this sample's non-streaming chat completions.
+
+Time to Response, Time Between Tokens, and Tokens per Second are not currently available for Standard deployments. Pair latency with token volume when investigating changes: higher latency with proportional token growth can be expected, while latency growth without token growth can indicate a service or network problem.
+
+### Foundry responsible AI
+
+`RAIHarmfulRequests` counts requests detected as harmful, while `RAIRejectedRequests` counts requests blocked by content filters. A rejection often means a guardrail worked as designed, but both signals affect the Foundry entity because individual signals cannot be suppressed from dependency rollup.
+
+The signals aggregate at the Foundry account level. Raw metric dimension filters do not reliably round-trip through the preview Health Models API and portal editor, so the templates intentionally leave `dimensionFilter` unset.
+
+### Foundry usage
+
+`TokenTransaction` counts prompt and generated inference tokens. Its thresholds are configurable through `tokenUsageDegradedThreshold` and `tokenUsageUnhealthyThreshold` in [`infra/health-model-foundry-signals.bicep`](infra/health-model-foundry-signals.bicep).
+
+Do not use the legacy Cognitive Services metrics `TotalCalls`, `SuccessfulCalls`, `TotalErrors`, `BlockedCalls`, `ServerErrors`, `ClientErrors`, or `Latency` for Azure OpenAI workloads. Their definitions are not designed for Azure OpenAI monitoring.
+
+### Application Insights
+
+The API error-rate signal calculates failed `AppRequests` as basis points of total requests and explicitly returns zero when no failed requests are found. The duration signal evaluates P95 API request duration. Both queries scope telemetry to the `clinical-trial-chat-api` application role.
+
+These signals describe application behavior, not only Foundry behavior. For example, Cosmos DB failures can increase the API error rate without affecting Foundry availability.
+
+### OpenTelemetry
+
+[`ChatTelemetry`](src/ClinicalTrialChat.Api/Services/ChatTelemetry.cs) defines the `foundry.server_errors` counter, and [`AzureFoundryChatService`](src/ClinicalTrialChat.Api/Services/AzureFoundryChatService.cs) records it for every Foundry response with a status code of 500 or greater.
+
+The metric includes no prompt text, response body, user ID, status-code attribute, or other high-cardinality data. It is exported to Application Insights and queried from `AppMetrics`.
+
+### Log Analytics
+
+The runtime signal detects stderr records, failed log entries, and unhandled exceptions in `ContainerAppConsoleLogs_CL`.
+
+The ingress signal detects application HTTP 5xx responses in `ContainerAppHTTPLogs`. That table is available only after enabling Container Apps HTTP diagnostic logs on the managed environment. Without that diagnostic setting, the signal remains `Unknown`. Review the privacy and ingestion-cost implications because HTTP logs can include paths, user agents, and client IP addresses.
+
+## Health Model structure
 
 ```text
 Health Model root
-└── Workload
+└── Clinical Trial Chat Workload
     ├── Microsoft Foundry
-    ├── Application Insights
-    ├── OpenTelemetry
-    ├── Log Analytics
+    ├── Application Insights - API
+    ├── OpenTelemetry - Foundry
+    ├── Log Analytics - Runtime
     └── Azure Monitor Alerting (suppressed)
 ```
 
-The workload uses worst-of dependency rollup. A dependency with `Standard` impact can therefore propagate its state to the workload and then to the root entity. The alerting entity represents configuration only and is suppressed from health propagation.
+The workload uses `WorstOf` dependency rollup with `ignoreUnknown: true`. Foundry and the telemetry entities use `Standard` impact, so their state can propagate to the workload and root. The alerting entity represents the shared action group and is suppressed from health propagation.
 
-## Included signal layers
+## Deploy
 
-| Layer | Included signals |
-| --- | --- |
-| Microsoft Foundry | Resource Health, availability, time to last byte, harmful requests, content-filter blocks, and inference-token consumption |
-| Application Insights | API error rate and P95 request duration |
-| OpenTelemetry | Application-observed Foundry HTTP 5xx errors |
-| Log Analytics | Container runtime errors and ingress 5xx responses |
-
-The templates contain starter thresholds, not universal production defaults. Baseline your own traffic, latency, token volume, and safety behavior before selecting thresholds.
-
-See [Foundry Health Model Signal Catalog](docs/FOUNDRY_HEALTH_SIGNALS.md) for metric names, query definitions, thresholds, limitations, and future signal ideas.
-
-## Reusable infrastructure
-
-| File | Purpose |
-| --- | --- |
-| [`infra/health-model-metrics.bicep`](infra/health-model-metrics.bicep) | Grants the Health Model identity access to Azure metrics and, optionally, Log Analytics |
-| [`infra/health-model-foundry-signals.bicep`](infra/health-model-foundry-signals.bicep) | Configures platform signals and Resource Health directly on an existing Foundry entity |
-| [`infra/health-model-observability.bicep`](infra/health-model-observability.bicep) | Adds the workload hierarchy, application telemetry layers, relationships, and alerts |
-| [`infra/foundry-health-probe.bicep`](infra/foundry-health-probe.bicep) | Runs a direct Foundry request on a one-minute Container Apps Job schedule |
-| [`infra/observability.bicep`](infra/observability.bicep) | Creates Application Insights and the shared alert action group for the sample workload |
-| [`infra/main.bicep`](infra/main.bicep) | Deploys the complete example application and supporting resources |
-
-The Health Model templates are intentionally separate from the main application deployment. This lets you apply the monitoring pattern to an existing Foundry project without coupling it to the sample application's lifecycle.
-
-## Deployment flow
-
-### Prerequisites
-
-- An Azure subscription with permissions to create resources and role assignments.
-- Azure CLI, Azure Developer CLI, and `jq`.
-- Access and quota for a compatible Foundry model in the target region.
-- An existing Azure Monitor Health Model for the signal templates to update.
-
-### 1. Deploy the example workload
+Prerequisites include an Azure subscription, Azure CLI, Azure Developer CLI, `jq`, Foundry model access, and an existing Azure Monitor Health Model.
 
 ```bash
 cp deployment.env.example deployment.env
@@ -114,52 +120,16 @@ azd provision --preview
 azd up
 ```
 
-The environment-specific file `deployment.env` is ignored by Git. Keep subscription IDs, tenant IDs, account details, and email addresses out of committed files.
+The Health Model templates are separate from the main application deployment so they can also be applied to an existing Foundry workload:
 
-### 2. Grant the Health Model access
-
-Deploy [`infra/health-model-metrics.bicep`](infra/health-model-metrics.bicep) at the scope containing the monitored resources. This grants the Health Model managed identity the roles required to read platform metrics and Log Analytics data.
-
-### 3. Configure Foundry signals
-
-Deploy [`infra/health-model-foundry-signals.bicep`](infra/health-model-foundry-signals.bicep) against the entity that represents your Foundry account.
-
-### 4. Add workload observability
-
-Deploy [`infra/health-model-observability.bicep`](infra/health-model-observability.bicep) to add application telemetry entities, workload rollup, relationships, and action-group alerts.
-
-See [Deployment guide](DEPLOYMENT.md) for complete commands, parameter discovery, validation, logs, updates, and cleanup.
-
-## Adapting this example
-
-1. **Map your Foundry resource.** Supply the existing Foundry account resource ID and Health Model entity name.
-2. **Select relevant Foundry metrics.** Keep only the inference, safety, and usage signals that match your deployment type.
-3. **Replace application queries.** Update the Application Insights role name, Log Analytics tables, resource filters, and custom metric names.
-4. **Model real dependencies.** Make the workload the parent of the services it depends on so health propagates in the correct direction.
-5. **Tune impact and rollup.** Use `Standard`, `Limited`, or `Suppressed` impact and choose a dependency aggregation strategy that reflects user impact.
-6. **Baseline thresholds.** Treat the included thresholds as starting points.
-7. **Configure alert recipients.** Connect entity-state alerts to your own action groups.
-8. **Decide whether synthetic traffic is appropriate.** The included probe keeps Foundry metrics active but is not an end-to-end application test.
-
-## Important behavior
-
-- Health Models evaluate telemetry already collected by Azure Monitor; they do not collect the source telemetry themselves.
-- Missing metric data can produce `Unknown`. Request traffic alone does not make an entity healthy.
-- KQL signals should return one numeric value and explicitly return zero when no matching records exist.
-- Entity updates replace the complete `signalGroups` value. Preview deployments and keep each template as the source of truth for every signal that should remain on the entity.
-- Foundry signals in this sample aggregate at the account level because raw dimension filters do not reliably round-trip through the preview API and portal editor.
-- The scheduled probe calls Foundry directly. It does not validate the application, frontend, or data store.
-- Agent-run, continuous-evaluation, and red-team signals are not included because the sample uses direct chat completions rather than Foundry Agent Service.
-
-## Repository guide
-
-| Path | Contents |
+| Template | Purpose |
 | --- | --- |
-| [`infra/`](infra/) | Application infrastructure and reusable Health Model templates |
-| [`docs/FOUNDRY_HEALTH_SIGNALS.md`](docs/FOUNDRY_HEALTH_SIGNALS.md) | Detailed signal catalog and design rationale |
-| [`DEPLOYMENT.md`](DEPLOYMENT.md) | End-to-end deployment and operations guide |
-| [`src/`](src/) | Sample Foundry workload and synthetic probe |
-| [`tests/`](tests/) | Application and probe tests |
+| [`infra/health-model-metrics.bicep`](infra/health-model-metrics.bicep) | Grants the Health Model identity access to Azure metrics and Log Analytics |
+| [`infra/health-model-foundry-signals.bicep`](infra/health-model-foundry-signals.bicep) | Adds Foundry platform metrics and Resource Health to an existing Foundry entity |
+| [`infra/health-model-observability.bicep`](infra/health-model-observability.bicep) | Adds the workload hierarchy, application signals, relationships, and alerts |
+| [`infra/foundry-health-probe.bicep`](infra/foundry-health-probe.bicep) | Creates the optional one-minute Foundry availability probe |
+
+See [`DEPLOYMENT.md`](DEPLOYMENT.md) for parameter discovery, preview commands, local development, validation, troubleshooting, and cleanup.
 
 ## Validate
 
@@ -169,14 +139,9 @@ dotnet test ClinicalTrialChat.slnx
 
 Always run a Bicep `what-if` or `azd provision --preview` before applying infrastructure changes.
 
-## Cost and cleanup
+## References
 
-The example deploys billable Azure resources, and the one-minute probe continuously consumes Container Apps execution time and Foundry tokens. Review the Azure pricing calculator and your subscription's free grants before leaving the sample running.
-
-Delete the example workload when it is no longer needed:
-
-```bash
-azd down --purge
-```
-
-Health Models or entities created outside the main `azd` deployment may require separate cleanup.
+- [Azure OpenAI monitoring data reference](https://learn.microsoft.com/azure/foundry/openai/monitor-openai-reference)
+- [Azure Monitor Health Model concepts](https://learn.microsoft.com/azure/azure-monitor/health-models/concepts)
+- [Configure signals in Azure Monitor Health Models](https://learn.microsoft.com/azure/azure-monitor/health-models/signals)
+- [Azure Container Apps logs](https://learn.microsoft.com/azure/container-apps/log-monitoring)
