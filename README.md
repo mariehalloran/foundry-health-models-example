@@ -6,7 +6,7 @@ The included chat application and scheduled probe generate realistic telemetry. 
 
 **Live application:** [Clinical Trial Chat](https://ambitious-glacier-0cabb320f.7.azurestaticapps.net/)
 
-> Azure Monitor Health Models and the `Microsoft.CloudHealth` API used by this sample are in preview. Validate signal behavior and tune every threshold before using the model in production.
+Validate signal behavior and tune every threshold before using the model in production.
 
 ## Sample Azure Health Model signals
 
