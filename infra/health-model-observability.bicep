@@ -42,21 +42,22 @@ param authenticationSettingName string = 'systemassigned'
 
 @description('Maximum Foundry client duration in one minute that degrades the OpenTelemetry entity.')
 @minValue(1)
-param otelClientDurationDegradedThresholdMs int = 25
+param otelClientDurationDegradedThresholdMs int = 500
 
 @description('Maximum Foundry client duration in one minute that makes the OpenTelemetry entity unhealthy.')
 @minValue(1)
-param otelClientDurationUnhealthyThresholdMs int = 50
+param otelClientDurationUnhealthyThresholdMs int = 10000
 
-var apiErrorRateQuery = '''
+var apiServerErrorRateQuery = '''
 let result = AppRequests
-    | where TimeGenerated > ago(1m)
+    | where TimeGenerated > ago(5m)
     | where AppRoleName endswith "clinical-trial-chat-api"
-    | summarize Total = sum(ItemCount), Failed = sumif(ItemCount, Success == false)
-    | extend ErrorRateBasisPoints = toint(iff(Total == 0, 0.0, todouble(Failed) / todouble(Total) * 10000.0))
-    | project ErrorRateBasisPoints;
-union result, (print ErrorRateBasisPoints = toint(0))
-| summarize ErrorRateBasisPoints = max(ErrorRateBasisPoints)
+    | where Name !endswith "/health"
+    | summarize Total = sum(ItemCount), ServerErrors = sumif(ItemCount, toint(ResultCode) between (500 .. 599))
+    | extend ServerErrorRateBasisPoints = toint(iff(Total == 0, 0.0, todouble(ServerErrors) / todouble(Total) * 10000.0))
+    | project ServerErrorRateBasisPoints;
+union result, (print ServerErrorRateBasisPoints = toint(0))
+| summarize ServerErrorRateBasisPoints = max(ServerErrorRateBasisPoints)
 '''
 
 var apiP95DurationQuery = '''
@@ -208,12 +209,12 @@ resource appInsightsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-
         signals: [
           {
             name: 'appinsights-api-error-rate'
-            displayName: 'Application Insights API error rate'
+            displayName: 'Application Insights API HTTP 5xx rate'
             signalKind: 'LogAnalyticsQuery'
-            queryText: apiErrorRateQuery
-            valueColumnName: 'ErrorRateBasisPoints'
+            queryText: apiServerErrorRateQuery
+            valueColumnName: 'ServerErrorRateBasisPoints'
             dataUnit: 'BasisPoints'
-            timeGrain: 'PT1M'
+            timeGrain: 'PT5M'
             refreshInterval: 'PT1M'
             evaluationRules: {
               degradedRule: {

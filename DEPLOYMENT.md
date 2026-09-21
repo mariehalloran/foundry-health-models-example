@@ -500,7 +500,7 @@ Deploy the layered observability template after the Foundry signal template. It 
 
 The OpenTelemetry signal counts Foundry HTTP 5xx responses surfaced to the API through the `foundry.server_errors` metric. It intentionally corroborates the account-level `AzureOpenAIAvailabilityRate` signal, although the custom metric covers only application-observed requests and uses count thresholds.
 
-The OpenTelemetry entity also evaluates the maximum `gen_ai.client.operation.duration` value observed each minute. Its demonstration thresholds are degraded above 25 ms and unhealthy above 50 ms. A normal chat request therefore exercises the unhealthy alert path; increase both duration thresholds after validating delivery.
+The OpenTelemetry entity also evaluates the maximum `gen_ai.client.operation.duration` value observed each minute. Its default thresholds match the Foundry time-to-last-byte signal: degraded above 500 ms and unhealthy above 10,000 ms. The signals can still transition differently because Foundry evaluates average time to last byte while OpenTelemetry evaluates the maximum client duration.
 
 The base deployment sends console logs to Log Analytics but doesn't enable Container Apps HTTP diagnostic logs. The `ContainerAppHTTPLogs`-based ingress 5xx signal remains `Unknown` until HTTP logs are enabled on the managed environment. Review the [HTTP log schema](https://learn.microsoft.com/azure/container-apps/log-monitoring#http-logs), including its path, user-agent, and client-IP fields, and the additional ingestion cost before enabling that diagnostic category.
 

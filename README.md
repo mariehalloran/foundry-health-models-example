@@ -10,9 +10,9 @@ Validate signal behavior and tune every threshold before using the model in prod
 
 ## Sample Azure Health Model signals
 
-The project configures 11 threshold-based signals plus Azure Resource Health. Each threshold signal evaluates a one-minute window and refreshes every minute so newly ingested failures affect health as quickly as the preview service allows.
+The project configures 11 threshold-based signals plus Azure Resource Health. Most threshold signals evaluate a one-minute window; the API HTTP 5xx rate uses a five-minute window to reduce sensitivity to Application Insights ingestion delay. Every signal refreshes once per minute.
 
-The thresholds are starting points, not universal production defaults. Baseline your own traffic, latency, token volume, and failure patterns before changing an entity's production health state.
+The thresholds are intentionally low and sensitive for demonstration purposes. They make it practical to generate test traffic and observe entities transition from **Healthy** to **Degraded** or **Unhealthy**, including dependency rollup and alert behavior. They are not production SLO recommendations and should not be copied unchanged into a real workload. Before production, replace every sample threshold with values derived from your service-level objectives, expected traffic, normal latency and token volume, dependency behavior, telemetry ingestion delay, and operational response practices.
 
 A one-minute query window prioritizes fast state changes but can miss telemetry that arrives late; widen the window if production ingestion latency makes signals intermittent.
 
@@ -24,10 +24,10 @@ A one-minute query window prioritizes fast state changes but can miss telemetry 
 | Microsoft Foundry | Harmful requests detected | `RAIHarmfulRequests` | `> 0` | `> 5` |
 | Microsoft Foundry | Requests blocked by content filters | `RAIRejectedRequests` | `> 0` | `> 10` |
 | Microsoft Foundry | Inference-token consumption | `TokenTransaction` | `> 25,000` | `> 50,000` |
-| Application Insights | API error rate | `AppRequests` KQL query | `> 1%` | `> 5%` |
+| Application Insights | API HTTP 5xx rate over five minutes, excluding health endpoints | `AppRequests` KQL query | `> 1%` | `> 5%` |
 | Application Insights | API P95 duration | `AppRequests` KQL query | `> 15,000 ms` | `> 30,000 ms` |
 | OpenTelemetry | Application-observed Foundry HTTP 5xx errors | `foundry.server_errors` in `AppMetrics` | `> 0` | `> 3` |
-| OpenTelemetry | Maximum Foundry client duration | `gen_ai.client.operation.duration` in `AppMetrics` | `> 25 ms` | `> 50 ms` |
+| OpenTelemetry | Maximum Foundry client duration | `gen_ai.client.operation.duration` in `AppMetrics` | `> 500 ms` | `> 10,000 ms` |
 | Log Analytics | Container runtime errors | `ContainerAppConsoleLogs_CL` KQL query | `> 5` | `> 20` |
 | Log Analytics | Container ingress HTTP 5xx responses | `ContainerAppHTTPLogs` KQL query | `> 0` | `> 5` |
 
@@ -83,9 +83,9 @@ Do not use the legacy Cognitive Services metrics `TotalCalls`, `SuccessfulCalls`
 
 ### Application Insights
 
-The API error-rate signal calculates failed `AppRequests` as basis points of total requests and explicitly returns zero when no failed requests are found. The duration signal evaluates P95 API request duration. Both queries scope telemetry to the `clinical-trial-chat-api` application role.
+The API HTTP 5xx-rate signal calculates server-error requests as basis points of user-facing requests over five minutes and explicitly returns zero when no server errors are found. It excludes `/health` and `/api/health`, preventing successful health probes from diluting a real user-facing failure. The five-minute window also makes the signal less likely to miss telemetry that arrives after the previous one-minute evaluation.
 
-These signals describe application behavior, not only Foundry behavior. For example, Cosmos DB failures can increase the API error rate without affecting Foundry availability.
+The duration signal evaluates P95 API request duration. Its 15,000 ms degraded and 30,000 ms unhealthy thresholds are higher than the Foundry and OpenTelemetry latency thresholds because an application request includes the Cosmos DB context read, Foundry model call, Cosmos DB exchange write, and API processing overhead. These signals describe application behavior, not only Foundry behavior. For example, Cosmos DB failures can increase the API HTTP 5xx rate without affecting Foundry availability.
 
 ### OpenTelemetry
 
@@ -95,7 +95,7 @@ The metric includes no prompt text, response body, user ID, status-code attribut
 
 The deployed application also enables the OpenAI .NET SDK's experimental OpenTelemetry instrumentation for the actual `ChatClient` request. It subscribes to the `OpenAI.ChatClient` activity source and meter, which emit a client span, operation duration, token usage, response model, response ID, finish reason, and error status using `gen_ai.*` semantic-convention attributes. Message-content capture remains disabled.
 
-The Health Model converts the SDK's `gen_ai.client.operation.duration` histogram from seconds to milliseconds and evaluates the maximum duration observed each minute. The demonstration thresholds make the signal degraded above 25 ms and unhealthy above 50 ms, so a real chat request intentionally exercises the unhealthy alert path. Raise both thresholds after validating alert delivery to avoid excessive state transitions.
+The Health Model converts the SDK's `gen_ai.client.operation.duration` histogram from seconds to milliseconds and evaluates the maximum duration observed each minute. Its default thresholds match the Foundry time-to-last-byte signal: degraded above 500 ms and unhealthy above 10,000 ms. These shared thresholds are deliberately low so ordinary test requests can demonstrate entity health transitions. The signals can still transition differently because Foundry evaluates average time to last byte while OpenTelemetry evaluates the maximum client duration.
 
 The Microsoft Foundry tracing article recommends server-side tracing for prompt and hosted agents. This sample is not a hosted agent: it invokes a Foundry model directly through `ChatClient`, so it uses client-side SDK instrumentation instead. The infrastructure connects the existing Application Insights resource to the Foundry project with project-managed-identity authentication and grants the project identity permission to publish telemetry. Direct model traces are available in Application Insights; agent-specific Foundry dashboards still require a Foundry agent or workflow that emits `gen_ai.agent.*` attributes.
 
