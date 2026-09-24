@@ -21,7 +21,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ClinicalTrialChat.Api\ClinicalTrialChat.Api.csproj" />
-    <ProjectReference Include="..\..\src\ClinicalTrialChat.Probe\ClinicalTrialChat.Probe.csproj" />
   </ItemGroup>
 
 </Project>

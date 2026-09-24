@@ -66,7 +66,6 @@ output AZURE_SUBSCRIPTION_ID string = subscription().subscriptionId
 output AZURE_TENANT_ID string = tenant().tenantId
 output AZURE_RESOURCE_GROUP_NAME string = resourceGroup.name
 output SERVICE_CHAT_RESOURCE_NAME string = resources.outputs.containerAppName
-output SERVICE_PROBE_RESOURCE_NAME string = resources.outputs.probeJobName
 output SERVICE_WEB_RESOURCE_NAME string = resources.outputs.staticWebAppName
 output APPLICATION_URL string = resources.outputs.applicationUrl
 output API_URL string = resources.outputs.apiUrl

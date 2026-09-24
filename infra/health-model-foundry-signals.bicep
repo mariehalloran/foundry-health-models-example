@@ -33,27 +33,6 @@ var metricNamespace = 'microsoft.cognitiveservices/accounts'
 
 var coreSignals = [
   {
-    name: 'foundry-availability'
-    displayName: 'Foundry availability'
-    signalKind: 'AzureResourceMetric'
-    metricNamespace: metricNamespace
-    metricName: 'AzureOpenAIAvailabilityRate'
-    aggregationType: 'Average'
-    dataUnit: 'Percent'
-    timeGrain: 'PT1M'
-    refreshInterval: 'PT1M'
-    evaluationRules: {
-      degradedRule: {
-        operator: 'LessThan'
-        threshold: 99
-      }
-      unhealthyRule: {
-        operator: 'LessThan'
-        threshold: 95
-      }
-    }
-  }
-  {
     name: 'foundry-latency'
     displayName: 'Foundry time to last byte'
     signalKind: 'AzureResourceMetric'
