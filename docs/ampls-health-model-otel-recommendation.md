@@ -13,7 +13,7 @@ workspace-based Application Insights resource and stored in its Log Analytics
 workspace. It also describes the alternative Azure Monitor workspace and
 Managed Prometheus path.
 
-Azure Monitor Health Models is a preview service. Validate the behavior in the
+Validate the behavior in the
 target region and API version before enforcing production network restrictions.
 
 ## Recommendation
