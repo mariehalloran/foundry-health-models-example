@@ -99,6 +99,8 @@ The Health Model converts the SDK's `gen_ai.client.operation.duration` histogram
 
 The Microsoft Foundry tracing article recommends server-side tracing for prompt and hosted agents. This sample is not a hosted agent: it invokes a Foundry model directly through `ChatClient`, so it uses client-side SDK instrumentation instead. The infrastructure connects the existing Application Insights resource to the Foundry project with project-managed-identity authentication and grants the project identity permission to publish telemetry. Direct model traces are available in Application Insights; agent-specific Foundry dashboards still require a Foundry agent or workflow that emits `gen_ai.agent.*` attributes.
 
+For private telemetry ingestion and Health Model query access, see the [AMPLS recommendation for Health Models and OpenTelemetry metrics](docs/ampls-health-model-otel-recommendation.md).
+
 ### Log Analytics
 
 The runtime signal detects stderr records, failed log entries, and unhandled exceptions in `ContainerAppConsoleLogs_CL`.
