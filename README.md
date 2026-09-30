@@ -1,4 +1,4 @@
-# Azure Monitor Health Model Sample for Microsoft Foundry
+# Azure Monitor Health Model Guide for Microsoft Foundry
 
 This repository demonstrates a reusable Azure Monitor Health Model for Microsoft Foundry. Direct Azure metrics provide the complete service-side baseline. An optional OpenTelemetry (OTEL) path enriches that baseline with a workload-observed perspective, while diagnostic anomalies remain separate from availability.
 
