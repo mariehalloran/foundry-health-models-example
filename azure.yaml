@@ -10,3 +10,11 @@ services:
     host: containerapp
     docker:
       remoteBuild: true
+  probe:
+    project: ./src/ClinicalTrialChat.Probe
+    language: docker
+    host: containerapp
+    docker:
+      path: ./Dockerfile
+      context: .
+      remoteBuild: true

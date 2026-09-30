@@ -11,114 +11,65 @@ param foundryEntityName string
 @description('Full ARM resource ID of the Microsoft.CognitiveServices account.')
 param foundryResourceId string
 
-@description('Action group that receives degraded and unhealthy Foundry alerts.')
-@minLength(1)
-param actionGroupResourceId string
-
 @description('Existing Health Model authentication setting used by the entities.')
 param authenticationSettingName string = 'systemassigned'
 
 @description('Entity display name.')
-param foundryEntityDisplayName string = 'Microsoft Foundry'
+param foundryEntityDisplayName string = 'Foundry Availability - Azure Metrics'
 
-@description('Inference-token count in one minute that degrades the Foundry entity.')
+@description('Minimum Azure OpenAI requests in five minutes before platform availability can affect health.')
 @minValue(1)
-param tokenUsageDegradedThreshold int = 25000
+param foundryPlatformMinimumRequests int = 20
 
-@description('Inference-token count in one minute that makes the Foundry entity unhealthy.')
-@minValue(1)
-param tokenUsageUnhealthyThreshold int = 50000
+@description('Platform availability percentage that degrades Foundry health. Keep this above the unhealthy percentage.')
+@minValue(0)
+@maxValue(100)
+param foundryPlatformDegradedAvailabilityPercent int = 99
 
-var metricNamespace = 'microsoft.cognitiveservices/accounts'
+@description('Platform availability percentage that makes Foundry health unhealthy. Keep this below the degraded percentage.')
+@minValue(0)
+@maxValue(100)
+param foundryPlatformUnhealthyAvailabilityPercent int = 95
 
-var coreSignals = [
+var foundryMetricNamespace = 'microsoft.cognitiveservices/accounts'
+var foundryPlatformAvailabilitySignalName = 'foundry-platform-availability'
+var foundryPlatformVolumeGateSignalName = 'foundry-platform-volume-gate'
+var foundryPlatformReliabilitySignals = [
   {
-    name: 'foundry-latency'
-    displayName: 'Foundry time to last byte'
+    name: foundryPlatformAvailabilitySignalName
+    displayName: 'AzureOpenAIAvailabilityRate'
     signalKind: 'AzureResourceMetric'
-    metricNamespace: metricNamespace
-    metricName: 'AzureOpenAITTLTInMS'
+    metricNamespace: foundryMetricNamespace
+    metricName: 'AzureOpenAIAvailabilityRate'
     aggregationType: 'Average'
-    dataUnit: 'MilliSeconds'
-    timeGrain: 'PT1M'
+    dataUnit: 'Percent'
+    timeGrain: 'PT5M'
     refreshInterval: 'PT1M'
     evaluationRules: {
       degradedRule: {
-        operator: 'GreaterThan'
-        threshold: 500
+        operator: 'LessThanOrEqual'
+        threshold: foundryPlatformDegradedAvailabilityPercent
       }
       unhealthyRule: {
-        operator: 'GreaterThan'
-        threshold: 10000
-      }
-    }
-  }
-]
-
-var safetySignals = [
-  {
-    name: 'foundry-harmful-requests'
-    displayName: 'Foundry harmful requests detected'
-    signalKind: 'AzureResourceMetric'
-    metricNamespace: metricNamespace
-    metricName: 'RAIHarmfulRequests'
-    aggregationType: 'Total'
-    dataUnit: 'Count'
-    timeGrain: 'PT1M'
-    refreshInterval: 'PT1M'
-    evaluationRules: {
-      degradedRule: {
-        operator: 'GreaterThan'
-        threshold: 0
-      }
-      unhealthyRule: {
-        operator: 'GreaterThan'
-        threshold: 5
+        operator: 'LessThanOrEqual'
+        threshold: foundryPlatformUnhealthyAvailabilityPercent
       }
     }
   }
   {
-    name: 'foundry-rejected-requests'
-    displayName: 'Foundry requests blocked by content filters'
+    name: foundryPlatformVolumeGateSignalName
+    displayName: 'AzureOpenAIRequests'
     signalKind: 'AzureResourceMetric'
-    metricNamespace: metricNamespace
-    metricName: 'RAIRejectedRequests'
+    metricNamespace: foundryMetricNamespace
+    metricName: 'AzureOpenAIRequests'
     aggregationType: 'Total'
     dataUnit: 'Count'
-    timeGrain: 'PT1M'
+    timeGrain: 'PT5M'
     refreshInterval: 'PT1M'
     evaluationRules: {
-      degradedRule: {
-        operator: 'GreaterThan'
-        threshold: 0
-      }
       unhealthyRule: {
-        operator: 'GreaterThan'
-        threshold: 10
-      }
-    }
-  }
-]
-
-var usageSignals = [
-  {
-    name: 'foundry-inference-tokens'
-    displayName: 'Foundry inference token consumption'
-    signalKind: 'AzureResourceMetric'
-    metricNamespace: metricNamespace
-    metricName: 'TokenTransaction'
-    aggregationType: 'Total'
-    dataUnit: 'Count'
-    timeGrain: 'PT1M'
-    refreshInterval: 'PT1M'
-    evaluationRules: {
-      degradedRule: {
-        operator: 'GreaterThan'
-        threshold: tokenUsageDegradedThreshold
-      }
-      unhealthyRule: {
-        operator: 'GreaterThan'
-        threshold: tokenUsageUnhealthyThreshold
+        operator: 'GreaterThanOrEqual'
+        threshold: foundryPlatformMinimumRequests
       }
     }
   }
@@ -128,9 +79,10 @@ resource healthModel 'Microsoft.CloudHealth/healthmodels@2026-05-01-preview' exi
   name: healthModelName
 }
 
-// Entity PUT operations replace the complete signalGroups value. Keep this file
-// as the source of truth for every Foundry signal that should remain.
-resource foundryEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-preview' = {
+// Entity PUT operations replace the complete signalGroups value.
+// Signal aggregation groups require 2026-09-01-preview, which can be newer than the bundled Bicep type index.
+#disable-next-line BCP081
+resource foundryEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-09-01-preview' = {
   name: foundryEntityName
   parent: healthModel
   properties: {
@@ -140,34 +92,34 @@ resource foundryEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-p
       iconName: 'Resource'
     }
     canvasPosition: {
-      x: -280
-      y: 170
+      x: -400
+      y: 420
     }
     healthObjective: 99
-    alerts: {
-      degraded: {
-        actionGroupIds: [
-          actionGroupResourceId
+    alerts: {}
+    signalAggregationGroups: [
+      {
+        name: 'foundry-platform-reliability-gate'
+        displayName: 'Foundry platform reliability with minimum traffic'
+        aggregationType: 'BestOf'
+        members: [
+          foundryPlatformAvailabilitySignalName
+          foundryPlatformVolumeGateSignalName
         ]
-        description: 'Microsoft Foundry health is degraded.'
-        severity: 'Sev2'
       }
-      unhealthy: {
-        actionGroupIds: [
-          actionGroupResourceId
-        ]
-        description: 'Microsoft Foundry is unhealthy and user impact is likely.'
-        severity: 'Sev1'
-      }
-    }
+    ]
     signalGroups: {
+      dependencies: {
+        aggregationType: 'WorstOf'
+        ignoreUnknown: true
+      }
       azureResource: {
         authenticationSetting: authenticationSettingName
         azureResourceId: foundryResourceId
         resourceHealth: {
-          enabled: 'Enabled'
+          enabled: 'Disabled'
         }
-        signals: concat(coreSignals, safetySignals, usageSignals)
+        signals: foundryPlatformReliabilitySignals
       }
     }
   }
@@ -175,5 +127,5 @@ resource foundryEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-p
 
 output entityResourceId string = foundryEntity.id
 output configuredEntityCount int = 1
-output configuredSignalCount int = length(coreSignals) + length(safetySignals) + length(usageSignals)
+output configuredSignalCount int = 2
 output configuredRelationshipCount int = 0

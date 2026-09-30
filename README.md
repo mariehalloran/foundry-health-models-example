@@ -1,40 +1,57 @@
 # Azure Health Models for Microsoft Foundry
 
-This repository is a reference implementation for monitoring a Microsoft Foundry chat workload with Azure Monitor Health Models. It combines Foundry platform metrics, Azure Resource Health, Application Insights, OpenTelemetry, and Log Analytics into one workload-level health view.
+This repository is a reference implementation for monitoring a Microsoft Foundry chat workload with Azure Monitor Health Models. It combines gated Foundry platform availability, Application Insights, and Log Analytics into one workload-level health view.
 
-The included chat application generates realistic telemetry. Reuse the signal patterns and Bicep templates with your own Foundry workload.
+The goal is to provide a reusable pattern for building a reliable Foundry health model, not to prescribe universal thresholds. Reuse the signal relationships and tune their traffic floors, SLOs, and evaluation windows for your workload.
 
 **Live application:** [Clinical Trial Chat](https://ambitious-glacier-0cabb320f.7.azurestaticapps.net/)
 
 Validate signal behavior and tune every threshold before using the model in production.
 
+## Core reliability pattern: gate availability with `BestOf`
+
+`AzureOpenAIAvailabilityRate` already represents server errors relative to request volume, but a percentage based on one or two requests is too noisy for health. This model combines it with an `AzureOpenAIRequests` minimum-volume gate:
+
+1. Availability evaluates as Healthy, Degraded, or Unhealthy.
+2. The request gate is intentionally **Healthy below** the minimum and **Unhealthy at or above** the minimum.
+3. Both signals are members of a `BestOf` group, so grouped health is nonhealthy only when both members are nonhealthy.
+
+| Five-minute requests | Request gate | Availability | `BestOf` result |
+| ---: | --- | --- | --- |
+| Below 20 | Healthy | Any populated state | Healthy |
+| At least 20 | Unhealthy | Healthy | Healthy |
+| At least 20 | Unhealthy | Degraded | Degraded |
+| At least 20 | Unhealthy | Unhealthy | Unhealthy |
+
+`BestOf` selects the healthier member state. Below the traffic floor, the Healthy gate keeps the group Healthy. Once traffic reaches the floor, the Unhealthy gate stops masking availability, so the group preserves availability's Healthy, Degraded, or Unhealthy state. This produces state-level **AND** behavior: enough traffic **and** bad availability.
+
+When adapting the pattern:
+
+- Set the traffic floor above probes, background jobs, and other non-user traffic.
+- Keep both signals in the same group; ungrouped members affect entity health independently.
+- Derive Degraded and Unhealthy availability thresholds from service objectives.
+- Keep anomaly-only metrics on a separate `Suppressed` diagnostics entity.
+- For KQL, reproduce the same semantics by returning Healthy below the traffic floor, then evaluating the error-rate thresholds.
+
 ## Sample Azure Health Model signals
 
-The project configures 10 threshold-based signals plus Azure Resource Health. Most threshold signals evaluate a one-minute window; the API HTTP 5xx rate uses a five-minute window to reduce sensitivity to Application Insights ingestion delay. Every signal refreshes once per minute.
+The model configures 14 evaluated signals across Availability and Diagnostics branches.
 
-The thresholds are intentionally low and sensitive for demonstration purposes. They make it practical to generate test traffic and observe entities transition from **Healthy** to **Degraded** or **Unhealthy**, including dependency rollup and alert behavior. They are not production SLO recommendations and should not be copied unchanged into a real workload. Before production, replace every sample threshold with values derived from your service-level objectives, expected traffic, normal latency and token volume, dependency behavior, telemetry ingestion delay, and operational response practices.
+The application and runtime thresholds are intentionally sensitive for demonstration purposes. Foundry platform availability is gated by a minimum request floor so low-volume percentages don't create false health transitions. None of the starter thresholds are universal production SLO recommendations. Tune them for expected traffic, dependency behavior, telemetry ingestion delay, and operational response practices.
 
-A one-minute query window prioritizes fast state changes but can miss telemetry that arrives late; widen the window if production ingestion latency makes signals intermittent.
+The Log Analytics reliability query uses a completed, delayed five-minute window so late telemetry and isolated failures don't create health-state flapping.
 
-| Health Model entity | Signal | Azure Monitor source | Degraded | Unhealthy |
-| --- | --- | --- | --- | --- |
-| Microsoft Foundry | Resource health | Azure Resource Health | Azure-reported state | Azure-reported state |
-| Microsoft Foundry | Time to last byte | `AzureOpenAITTLTInMS` | `> 500 ms` | `> 10,000 ms` |
-| Microsoft Foundry | Harmful requests detected | `RAIHarmfulRequests` | `> 0` | `> 5` |
-| Microsoft Foundry | Requests blocked by content filters | `RAIRejectedRequests` | `> 0` | `> 10` |
-| Microsoft Foundry | Inference-token consumption | `TokenTransaction` | `> 25,000` | `> 50,000` |
-| Application Insights | API HTTP 5xx rate over five minutes, excluding health endpoints | `AppRequests` KQL query | `> 1%` | `> 5%` |
-| Application Insights | API P95 duration | `AppRequests` KQL query | `> 15,000 ms` | `> 30,000 ms` |
-| OpenTelemetry | Application-observed Foundry HTTP 5xx errors | `foundry.server_errors` in `AppMetrics` | `> 0` | `> 3` |
-| OpenTelemetry | Maximum Foundry client duration | `gen_ai.client.operation.duration` in `AppMetrics` | `> 500 ms` | `> 10,000 ms` |
-| Log Analytics | Container runtime errors | `ContainerAppConsoleLogs_CL` KQL query | `> 5` | `> 20` |
-| Log Analytics | Container ingress HTTP 5xx responses | `ContainerAppHTTPLogs` KQL query | `> 0` | `> 5` |
+| Entity | Technical signals | Purpose | Rollup |
+| --- | --- | --- | --- |
+| Foundry Availability - Azure Metrics | `AzureOpenAIAvailabilityRate`, `AzureOpenAIRequests` | Service-side availability gated by request volume | Foundry Availability, Sev2/Sev1 |
+| Foundry Availability - Application OTEL | `foundry.availability_rate`, `foundry.requests` | Client-observed availability with the same gate | Foundry Availability, Sev2/Sev1 |
+| Diagnostics - Azure Metrics | `TokenTransaction`, `AzureOpenAINormalizedTBTInMS`, `GeneratedTokens`, `AzureOpenAITTLTInMS`, `AzureOpenAINormalizedTTFTInMS`, `ProcessedPromptTokens`, `RAIRejectedRequests`, `RAIHarmfulRequests`, `RAISystemEvent`, `RAITotalRequests` | Remaining usable platform anomaly signals | Foundry Diagnostics, suppressed, Sev3 |
 
-The Foundry platform signals are configured in [`infra/health-model-foundry-signals.bicep`](infra/health-model-foundry-signals.bicep). The application, OpenTelemetry, and Log Analytics signals are configured in [`infra/health-model-observability.bicep`](infra/health-model-observability.bicep).
+The platform availability pair is configured in [`infra/health-model-foundry-signals.bicep`](infra/health-model-foundry-signals.bicep). The Availability and Diagnostics parents, Application OTEL availability entity, and Azure Metrics diagnostics entity are configured in [`infra/health-model-observability.bicep`](infra/health-model-observability.bicep).
 
-### Why AzureOpenAIAvailabilityRate is not recommended
+### Why AzureOpenAIAvailabilityRate is gated
 
-This sample intentionally does not configure `AzureOpenAIAvailabilityRate` as a Health Model signal. The metric is calculated as:
+This sample never uses `AzureOpenAIAvailabilityRate` as an ungrouped Health Model signal. The metric is calculated as:
 
 ```text
 (Total Calls - Server Errors) / Total Calls
@@ -42,75 +59,73 @@ This sample intentionally does not configure `AzureOpenAIAvailabilityRate` as a 
 
 Server errors include Foundry responses with HTTP status codes of 500 or greater. When no requests reach Foundry during an evaluation window, the metric has no request denominator and can appear as `0%` or no data. Depending on Health Model evaluation behavior, this can make the signal look unhealthy or `Unknown` even though Foundry has not returned an error.
 
-An earlier version of this sample deployed a scheduled Container Apps Job that sent one direct chat-completion request to Foundry every minute. The probe was intended to keep the metric populated and exercise the managed identity, private network, DNS, and Foundry request path. Even with that traffic, the availability signal could still show transient unhealthy or `Unknown` evaluations:
+The sample also deploys a scheduled Container Apps Job that sends one direct chat-completion request to Foundry every minute. The platform signals still gate availability with a minimum five-minute request count, so the probe doesn't make low-volume availability authoritative by itself.
 
-- The probe schedule, Azure Monitor ingestion, and Health Model evaluation windows are not guaranteed to align.
-- A single probe failure or Foundry 5xx can dominate a low-traffic one-minute bucket.
-- A job startup or network failure before the request reaches Foundry can still leave the metric without a sample.
+Use the gated platform availability group for the account-level reliability view. Treat the probe's execution status as an independent path check rather than relying only on its effect on `AzureOpenAIAvailabilityRate`.
 
-The synthetic traffic therefore did not make `AzureOpenAIAvailabilityRate` reliable enough to recommend as a workload health signal, while adding recurring Container Apps and model-token cost. The sample removes both the signal and the probe.
+### Synthetic Foundry probe
 
-Use Azure Resource Health for Azure-reported service availability and the application-emitted `foundry.server_errors` counter for Foundry HTTP 5xx responses observed by this workload. The OTEL KQL query returns zero when the application observes no matching server errors, so an idle interval does not become an artificial outage. This signal covers only application requests and does not independently prove reachability when there is no traffic. If an active synthetic check is required, report the check result directly instead of using it to influence a derived availability-rate metric.
+[`ClinicalTrialChat.Probe`](src/ClinicalTrialChat.Probe) runs in the existing private Container Apps environment with its own least-privilege managed identity. Every minute it calls the configured Foundry deployment with `Reply OK.` and caps the response at 16 completion tokens. Each scheduled execution makes one attempt, has a 45-second application timeout and 55-second job timeout, and isn't retried automatically.
 
-### Foundry latency
+The probe exercises managed identity, private DNS, private endpoint routing, the Foundry gateway, and model inference. It also keeps request metrics active during otherwise idle periods. It is diagnostic traffic, not the Health Model's source of truth:
 
-`AzureOpenAITTLTInMS` measures the time from sending a request until the last response byte arrives. It is the appropriate end-to-end latency signal for this sample's non-streaming chat completions.
+- Five probe requests per five-minute window remain below the default platform reliability gate of 20 requests.
+- Schedule, metric ingestion, and Health Model evaluation boundaries aren't guaranteed to align.
+- A startup, identity, DNS, or network failure before the request reaches Foundry doesn't produce a Foundry request metric.
+- The job incurs recurring Container Apps execution and model-token charges.
 
-Time to Response, Time Between Tokens, and Tokens per Second are not currently available for Standard deployments. Pair latency with token volume when investigating changes: higher latency with proportional token growth can be expected, while latency growth without token growth can indicate a service or network problem.
+Probe execution failures are visible in Container Apps Job status and console logs. The Health Model continues to rely on the volume-gated availability group.
 
-### Foundry responsible AI
+### Foundry platform metrics
 
-`RAIHarmfulRequests` counts requests detected as harmful, while `RAIRejectedRequests` counts requests blocked by content filters. A rejection often means a guardrail worked as designed, but both signals affect the Foundry entity because individual signals cannot be suppressed from dependency rollup.
+The `Diagnostics - Azure Metrics` entity uses low-sensitivity dynamic thresholds for the remaining platform signals. The Foundry Diagnostics parent is suppressed from root health and owns the Sev3 alert policy.
 
-The signals aggregate at the Foundry account level. Raw metric dimension filters do not reliably round-trip through the preview Health Models API and portal editor, so the templates intentionally leave `dimensionFilter` unset.
+Dynamic thresholds require representative history before they become useful and should answer "is this unusual?" rather than "is this unacceptable?" New or sparse deployments can remain in their learning period, and slowly evolving behavior might become part of the learned baseline. The Foundry Availability parent owns the Sev2/Sev1 policy for both health sources.
 
-### Foundry usage
+#### Why a diagnostic signal can be `Unknown`
 
-`TokenTransaction` counts prompt and generated inference tokens. Its thresholds are configurable through `tokenUsageDegradedThreshold` and `tokenUsageUnhealthyThreshold` in [`infra/health-model-foundry-signals.bicep`](infra/health-model-foundry-signals.bicep).
+`Unknown` doesn't necessarily mean the signal is broken:
 
-Do not use the legacy Cognitive Services metrics `TotalCalls`, `SuccessfulCalls`, `TotalErrors`, `BlockedCalls`, `ServerErrors`, `ClientErrors`, or `Latency` for Azure OpenAI workloads. Their definitions are not designed for Azure OpenAI monitoring.
+| Signal status | Meaning |
+| --- | --- |
+| Numeric value, `Unknown`, and no error | The dynamic threshold is still learning that metric series |
+| No value, `Unknown`, and no error | The metric produced no sample in the evaluation window or isn't emitted by that deployment |
+| `Unknown` with an error | The metric name, query, permissions, or data source configuration failed |
 
-### Application Insights
+Dynamic thresholds generally need at least three days and 30 samples before they can classify a series, and longer history is required for daily or weekly seasonality. Low sensitivity widens the eventual normal range; it doesn't shorten the learning period. The Diagnostics parent uses `ignoreUnknown: true` and is suppressed from root health, so learning or missing-data intervals don't create availability incidents or Sev3 alerts.
 
-The API HTTP 5xx-rate signal calculates server-error requests as basis points of user-facing requests over five minutes and explicitly returns zero when no server errors are found. It excludes `/health` and `/api/health`, preventing successful health probes from diluting a real user-facing failure. The five-minute window also makes the signal less likely to miss telemetry that arrives after the previous one-minute evaluation.
+Content-safety metrics remain valuable dashboard and investigation signals, but the sample doesn't use raw safety counts as Health Model state inputs. Blocked content commonly means a guardrail worked as designed, so those counts need a separate safety policy rather than generic health thresholds.
 
-The duration signal evaluates P95 API request duration. Its 15,000 ms degraded and 30,000 ms unhealthy thresholds are higher than the Foundry and OpenTelemetry latency thresholds because an application request includes the Cosmos DB context read, Foundry model call, Cosmos DB exchange write, and API processing overhead. These signals describe application behavior, not only Foundry behavior. For example, Cosmos DB failures can increase the API HTTP 5xx rate without indicating a Foundry service failure.
+#### Recommended metrics reference
 
-### OpenTelemetry
+See the official [Azure OpenAI monitoring data reference](https://learn.microsoft.com/en-us/azure/foundry/openai/monitor-openai-reference) for the current recommended metric catalog, supported dimensions, applicability, and export behavior. This example organizes selected metrics by operational intent instead of treating every metric as availability.
 
-[`ChatTelemetry`](src/ClinicalTrialChat.Api/Services/ChatTelemetry.cs) defines the `foundry.server_errors` counter, and [`AzureFoundryChatService`](src/ClinicalTrialChat.Api/Services/AzureFoundryChatService.cs) records it for every Foundry response with a status code of 500 or greater.
+### OTEL as an additional datapoint
 
-The metric includes no prompt text, response body, user ID, status-code attribute, or other high-cardinality data. It is exported to Application Insights and queried from `AppMetrics`.
+[`ChatTelemetry`](src/ClinicalTrialChat.Api/Services/ChatTelemetry.cs) defines low-cardinality `foundry.requests` and `foundry.server_errors` counters. [`AzureFoundryChatService`](src/ClinicalTrialChat.Api/Services/AzureFoundryChatService.cs) records them around each logical Foundry operation.
 
-The deployed application also enables the OpenAI .NET SDK's experimental OpenTelemetry instrumentation for the actual `ChatClient` request. It subscribes to the `OpenAI.ChatClient` activity source and meter, which emit a client span, operation duration, token usage, response model, response ID, finish reason, and error status using `gen_ai.*` semantic-convention attributes. Message-content capture remains disabled.
+The metrics include no prompt text, response body, user ID, status-code attribute, or other high-cardinality data. They are exported to Application Insights and queried from `AppMetrics`.
 
-The Health Model converts the SDK's `gen_ai.client.operation.duration` histogram from seconds to milliseconds and evaluates the maximum duration observed each minute. Its default thresholds match the Foundry time-to-last-byte signal: degraded above 500 ms and unhealthy above 10,000 ms. These shared thresholds are deliberately low so ordinary test requests can demonstrate entity health transitions. The signals can still transition differently because Foundry evaluates average time to last byte while OpenTelemetry evaluates the maximum client duration.
+Foundry Availability - Application OTEL mirrors the platform availability calculation with client-observed request and server-error counts. Comparing the two availability views helps separate provider behavior from client, identity, network, or application effects.
+
+The deployed application also enables the OpenAI .NET SDK's experimental OpenTelemetry instrumentation for the actual `ChatClient` request. Message-content capture remains disabled.
 
 The Microsoft Foundry tracing article recommends server-side tracing for prompt and hosted agents. This sample is not a hosted agent: it invokes a Foundry model directly through `ChatClient`, so it uses client-side SDK instrumentation instead. The infrastructure connects the existing Application Insights resource to the Foundry project with project-managed-identity authentication and grants the project identity permission to publish telemetry. Direct model traces are available in Application Insights; agent-specific Foundry dashboards still require a Foundry agent or workflow that emits `gen_ai.agent.*` attributes.
 
 For private telemetry ingestion and Health Model query access, see the [AMPLS recommendation for Health Models and OpenTelemetry metrics](docs/ampls-health-model-otel-recommendation.md).
 
-### Log Analytics
-
-The runtime signal detects stderr records, failed log entries, and unhandled exceptions in `ContainerAppConsoleLogs_CL`.
-
-The ingress signal detects application HTTP 5xx responses in `ContainerAppHTTPLogs`. That table is available only after enabling Container Apps HTTP diagnostic logs on the managed environment. Without that diagnostic setting, the signal remains `Unknown`. Review the privacy and ingestion-cost implications because HTTP logs can include paths, user agents, and client IP addresses.
-
 ## Health Model structure
 
 ```text
 Foundry Health Model Example
-├── Microsoft Foundry
-├── Azure Cosmos DB
-└── Clinical Trial Chat Workload
-    ├── Application Insights - API
-    ├── OpenTelemetry - Foundry
-    └── Log Analytics - Runtime
+├── Foundry Availability
+│   ├── Foundry Availability - Azure Metrics
+│   └── Foundry Availability - Application OTEL
+└── Foundry Diagnostics (suppressed)
+    └── Diagnostics - Azure Metrics
 ```
 
-![Azure Monitor Health Model graph showing Foundry, Cosmos DB, and the clinical trial workload](docs/images/foundry-health-model.png)
-
-The root directly parents the existing Foundry, Cosmos DB, and workload entities. The observability template manages those relationships but does not replace the existing Cosmos DB entity. The workload uses `WorstOf` dependency rollup with `ignoreUnknown: true` for its Application Insights, OpenTelemetry, and Log Analytics children. Alerts reference the shared Azure Monitor action group directly; the action group is not modeled as an entity because action groups expose no evaluatable metric or Resource Health signal.
+Both branches use `WorstOf` with `ignoreUnknown: true`. Foundry Availability owns the Sev2/Sev1 policy. Foundry Diagnostics owns the Sev3 anomaly policy but is suppressed from root health. Cosmos DB is intentionally not represented in this Health Model.
 
 ## Deploy
 
@@ -129,8 +144,9 @@ The Health Model templates are separate from the main application deployment so 
 | Template | Purpose |
 | --- | --- |
 | [`infra/health-model-metrics.bicep`](infra/health-model-metrics.bicep) | Grants the Health Model identity access to Azure metrics and Log Analytics |
-| [`infra/health-model-foundry-signals.bicep`](infra/health-model-foundry-signals.bicep) | Adds Foundry platform metrics and Resource Health to an existing Foundry entity |
-| [`infra/health-model-observability.bicep`](infra/health-model-observability.bicep) | Adds the workload hierarchy, application signals, relationships, and alerts |
+| [`infra/health-model-foundry-signals.bicep`](infra/health-model-foundry-signals.bicep) | Adds gated availability/request signals to the existing Foundry entity |
+| [`infra/health-model-observability.bicep`](infra/health-model-observability.bicep) | Adds OTEL reliability, both diagnostics entities, relationships, and alerts |
+| [`infra/foundry-health-probe.bicep`](infra/foundry-health-probe.bicep) | Runs the one-minute, low-token synthetic Foundry request |
 | [`infra/foundry-tracing.bicep`](infra/foundry-tracing.bicep) | Connects Application Insights to Foundry with project-managed-identity ingestion |
 
 See [`DEPLOYMENT.md`](DEPLOYMENT.md) for parameter discovery, preview commands, local development, validation, troubleshooting, and cleanup.

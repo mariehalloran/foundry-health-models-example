@@ -3,35 +3,29 @@ using ClinicalTrialChat.Api.Services;
 
 namespace ClinicalTrialChat.Api.Tests;
 
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class ChatTelemetryCollection
+{
+    public const string Name = "Chat telemetry";
+}
+
+[Collection(ChatTelemetryCollection.Name)]
 public sealed class ChatTelemetryTests
 {
     [Fact]
+    public void RecordFoundryRequest_EmitsPrivacySafeCounter()
+    {
+        AssertPrivacySafeCounter(
+            ChatTelemetry.FoundryRequestsMetricName,
+            ChatTelemetry.RecordFoundryRequest);
+    }
+
+    [Fact]
     public void RecordFoundryServerError_EmitsPrivacySafeCounter()
     {
-        long? measurement = null;
-        using var listener = new MeterListener
-        {
-            InstrumentPublished = (instrument, meterListener) =>
-            {
-                if (instrument.Meter.Name == ChatTelemetry.MeterName
-                    && instrument.Name
-                        == ChatTelemetry.FoundryServerErrorsMetricName)
-                {
-                    meterListener.EnableMeasurementEvents(instrument);
-                }
-            }
-        };
-        listener.SetMeasurementEventCallback<long>(
-            (_, value, tags, _) =>
-            {
-                measurement = value;
-                Assert.Empty(tags.ToArray());
-            });
-        listener.Start();
-
-        ChatTelemetry.RecordFoundryServerError();
-
-        Assert.Equal(1, measurement);
+        AssertPrivacySafeCounter(
+            ChatTelemetry.FoundryServerErrorsMetricName,
+            ChatTelemetry.RecordFoundryServerError);
     }
 
     [Theory]
@@ -46,4 +40,36 @@ public sealed class ChatTelemetryTests
             expected,
             ChatTelemetry.IsFoundryServerError(statusCode));
     }
+
+    private static void AssertPrivacySafeCounter(
+        string metricName,
+        Action recordMeasurement)
+    {
+        long? measurement = null;
+        using var listener = CreateListener(metricName);
+        listener.SetMeasurementEventCallback<long>(
+            (_, value, tags, _) =>
+            {
+                measurement = value;
+                Assert.Empty(tags.ToArray());
+            });
+        listener.Start();
+
+        recordMeasurement();
+
+        Assert.Equal(1, measurement);
+    }
+
+    private static MeterListener CreateListener(params string[] metricNames) =>
+        new()
+        {
+            InstrumentPublished = (instrument, meterListener) =>
+            {
+                if (instrument.Meter.Name == ChatTelemetry.MeterName
+                    && metricNames.Contains(instrument.Name, StringComparer.Ordinal))
+                {
+                    meterListener.EnableMeasurementEvents(instrument);
+                }
+            }
+        };
 }

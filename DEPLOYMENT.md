@@ -142,6 +142,7 @@ The deployment creates:
 - Standard Azure Static Web App hosting the separate frontend.
 - Static Web Apps linked backend that proxies `/api/*` to Container Apps.
 - Azure Container App and Container Apps environment.
+- Scheduled Container Apps Job that probes Foundry once per minute.
 - Azure Cosmos DB serverless account and conversation container.
 - A virtual network, private endpoints, and private DNS zones.
 - An application managed identity with scoped role assignments.
@@ -186,6 +187,46 @@ curl --fail "$app_url/api/history/$user_id"
 curl --fail --request DELETE "$app_url/api/history/$user_id"
 ```
 
+## Verify the scheduled Foundry probe
+
+The `probe` service deploys a scheduled Container Apps Job into the same private environment as the API. It runs every minute, uses a dedicated managed identity, sends the prompt `Reply OK.`, and allows at most 16 completion tokens.
+
+Inspect the deployed schedule:
+
+```bash
+resource_group="$(azd env get-value AZURE_RESOURCE_GROUP_NAME)"
+probe_job_name="$(azd env get-value SERVICE_PROBE_RESOURCE_NAME)"
+
+az containerapp job show \
+  --resource-group "$resource_group" \
+  --name "$probe_job_name" \
+  --query '{
+    trigger: properties.configuration.triggerType,
+    cron: properties.configuration.scheduleTriggerConfig.cronExpression,
+    timeout: properties.configuration.replicaTimeout,
+    retries: properties.configuration.replicaRetryLimit
+  }'
+```
+
+Confirm recent executions are succeeding:
+
+```bash
+az containerapp job execution list \
+  --resource-group "$resource_group" \
+  --name "$probe_job_name" \
+  --query '[0:10].{name:name,status:properties.status,start:properties.startTime,end:properties.endTime}' \
+  --output table
+
+az containerapp job logs show \
+  --resource-group "$resource_group" \
+  --name "$probe_job_name" \
+  --container probe \
+  --tail 20 \
+  --format text
+```
+
+Each scheduled execution makes one Foundry request with no automatic retry. The application timeout is 45 seconds and the job timeout is 55 seconds. Five probe requests per five-minute window remain below the default platform reliability gate of 20 requests, so probe traffic alone doesn't make `AzureOpenAIAvailabilityRate` health-affecting.
+
 ## Deploy application updates
 
 When only application code changed:
@@ -199,6 +240,7 @@ Deploy just one service when appropriate:
 ```bash
 azd deploy web
 azd deploy chat
+azd deploy probe
 ```
 
 When Bicep or multiple services changed:
@@ -421,7 +463,7 @@ foundry_entity_name="$(
 action_group_resource_id="$(azd env get-value AZURE_MONITOR_ACTION_GROUP_ID)"
 ```
 
-Preview the Foundry inference, safety, and usage signals:
+Preview the gated Foundry platform reliability signals:
 
 ```bash
 az deployment group what-if \
@@ -431,6 +473,9 @@ az deployment group what-if \
     healthModelName="$health_model_name" \
     foundryEntityName="$foundry_entity_name" \
     foundryResourceId="$foundry_resource_id" \
+    foundryPlatformMinimumRequests=20 \
+    foundryPlatformDegradedAvailabilityPercent=99 \
+    foundryPlatformUnhealthyAvailabilityPercent=95 \
     actionGroupResourceId="$action_group_resource_id"
 ```
 
@@ -445,52 +490,38 @@ az deployment group create \
     healthModelName="$health_model_name" \
     foundryEntityName="$foundry_entity_name" \
     foundryResourceId="$foundry_resource_id" \
+    foundryPlatformMinimumRequests=20 \
+    foundryPlatformDegradedAvailabilityPercent=99 \
+    foundryPlatformUnhealthyAvailabilityPercent=95 \
     actionGroupResourceId="$action_group_resource_id"
 ```
 
-The template intentionally uses account-level Foundry metrics without `dimensionFilter`. This application provisions one model deployment, so the aggregate represents that deployment unless more deployments are added to the account. The `2026-05-01-preview` entity schema exposes raw `dimensionFilter` text but no separate `dimension` property. Although the portal supports structured dimension selection, raw ARM filter expressions didn't round-trip reliably through the preview editor for this sample and could leave signal evaluation in `Unknown`. Keep the filter unset until the API, editor, and evaluator handle the same filter representation reliably.
+The Foundry Availability - Azure Metrics entity contains `AzureOpenAIAvailabilityRate` and `AzureOpenAIRequests`. Availability is never ungrouped: the minimum-request signal is intentionally Unhealthy when the gate is open, and a `BestOf` group preserves the availability state only when traffic is sufficient.
 
-`AzureOpenAIAvailabilityRate` is intentionally not configured. An earlier version of the sample sent one synthetic request per minute to keep low-traffic evaluation windows populated. The signal could still show transient unhealthy or `Unknown` evaluations because the probe schedule, metric ingestion, and Health Model evaluation were not guaranteed to align; a single 5xx could dominate the one-request bucket; and failures before the request reached Foundry could still leave missing data. The probe and availability signal were removed rather than recommending a noisy health indicator with recurring compute and token cost.
+| Five-minute requests | Availability | Group state |
+| --- | --- | --- |
+| Below minimum | Any populated value | Healthy |
+| At or above minimum | Healthy | Healthy |
+| At or above minimum | Degraded | Degraded |
+| At or above minimum | Unhealthy | Unhealthy |
 
-The Foundry token-usage signal defaults to degraded above 25,000 inference tokens per minute and unhealthy above 50,000. Override these starter thresholds after baselining:
+The one-minute synthetic probe keeps the path exercised and usually keeps request metrics populated, but its five requests per five-minute window remain below the default gate of 20. At zero traffic the platform metrics can be `Unknown` without generating a threshold alert.
+
+### Configure availability and diagnostics
+
+Deploy the observability template after the Foundry signal template. It creates a Foundry Availability branch with Azure Metrics and Application OTEL children and a suppressed Foundry Diagnostics branch containing the remaining Azure metrics.
+
+Foundry Availability - Application OTEL uses two KQL signals over a completed five-minute window: an availability percentage derived from `foundry.server_errors` and `foundry.requests`, and a request-count gate. A `BestOf` group combines them with the same 20-request, 99%, and 95% settings as the Azure Metrics pair.
+
+Diagnostics - Azure Metrics uses native low-sensitivity dynamic thresholds and propagates only to the suppressed Foundry Diagnostics parent, which owns the Sev3 alert policy.
+
+Newly configured dynamic signals can remain `Unknown` while Azure learns their normal behavior. A numeric value with no error means collection is working and the baseline isn't ready. A null value with no error means no sample was emitted in the window. An `error` field indicates an actual configuration, permission, query, or unsupported-metric problem. The Diagnostics parent ignores unknown children and is suppressed from root health, so only evaluated anomalies generate Sev3 alerts.
 
 ```bash
---parameters \
-  tokenUsageDegradedThreshold=50000 \
-  tokenUsageUnhealthyThreshold=100000
-```
-
-### Configure workload rollup and application observability
-
-Deploy the layered observability template after the Foundry signal template. It places Foundry and the workload directly under the Health Model root, then makes the workload depend on Application Insights, OpenTelemetry, and Log Analytics. Degraded and unhealthy workload states notify the same action group.
-
-The OpenTelemetry signal counts Foundry HTTP 5xx responses surfaced to the API through the `foundry.server_errors` metric. It covers only application-observed requests and uses count thresholds, complementing Azure Resource Health without turning idle traffic into an availability failure.
-
-The OpenTelemetry entity also evaluates the maximum `gen_ai.client.operation.duration` value observed each minute. Its default thresholds match the Foundry time-to-last-byte signal: degraded above 500 ms and unhealthy above 10,000 ms. The signals can still transition differently because Foundry evaluates average time to last byte while OpenTelemetry evaluates the maximum client duration.
-
-The base deployment sends console logs to Log Analytics but doesn't enable Container Apps HTTP diagnostic logs. The `ContainerAppHTTPLogs`-based ingress 5xx signal remains `Unknown` until HTTP logs are enabled on the managed environment. Review the [HTTP log schema](https://learn.microsoft.com/azure/container-apps/log-monitoring#http-logs), including its path, user-agent, and client-IP fields, and the additional ingestion cost before enabling that diagnostic category.
-
-```bash
-container_app_name="$(azd env get-value SERVICE_CHAT_RESOURCE_NAME)"
-app_insights_resource_id="$(azd env get-value APPLICATIONINSIGHTS_RESOURCE_ID)"
 log_analytics_workspace_id="$(azd env get-value LOG_ANALYTICS_WORKSPACE_ID)"
-cosmos_resource_id="$(
-  az resource list \
-    --resource-group "$resource_group" \
-    --resource-type Microsoft.DocumentDB/databaseAccounts \
-    --query '[0].id' \
-    --output tsv
-)"
-cosmos_entity_name="$(
-  az rest \
-    --method get \
-    --url "https://management.azure.com${health_model_resource_id}/entities?api-version=2026-05-01-preview" \
-  | jq -r --arg id "$cosmos_resource_id" \
-      '.value[] | select(.properties.signalGroups.azureResource.azureResourceId == $id) | .name'
-)"
 ```
 
-Preview the hierarchy and workload signals:
+Preview the OTEL reliability and diagnostics signals:
 
 ```bash
 az deployment group what-if \
@@ -499,14 +530,15 @@ az deployment group what-if \
   --parameters \
     healthModelName="$health_model_name" \
     foundryEntityName="$foundry_entity_name" \
-    cosmosEntityName="$cosmos_entity_name" \
-    containerAppName="$container_app_name" \
-    appInsightsResourceId="$app_insights_resource_id" \
+    foundryResourceId="$foundry_resource_id" \
     logAnalyticsWorkspaceResourceId="$log_analytics_workspace_id" \
+    otelReliabilityMinimumRequests=20 \
+    otelDegradedAvailabilityPercent=99 \
+    otelUnhealthyAvailabilityPercent=95 \
     actionGroupResourceId="$action_group_resource_id"
 ```
 
-Apply after reviewing the relationship corrections. Health Model relationship endpoints are immutable, so remove obsolete or duplicate edges before migrating an existing graph to the stable `health-root-to-*` and `chat-workload-to-*` relationship names.
+Apply after reviewing the relationship corrections. Health Model relationship endpoints are immutable, so remove obsolete or duplicate edges before migrating an existing graph to the stable `health-root-to-*`, `reliability-to-*`, and `diagnostics-to-*` relationship names.
 
 ```bash
 az deployment group create \
@@ -516,20 +548,79 @@ az deployment group create \
   --parameters \
     healthModelName="$health_model_name" \
     foundryEntityName="$foundry_entity_name" \
-    cosmosEntityName="$cosmos_entity_name" \
-    containerAppName="$container_app_name" \
-    appInsightsResourceId="$app_insights_resource_id" \
+    foundryResourceId="$foundry_resource_id" \
     logAnalyticsWorkspaceResourceId="$log_analytics_workspace_id" \
+    otelReliabilityMinimumRequests=20 \
+    otelDegradedAvailabilityPercent=99 \
+    otelUnhealthyAvailabilityPercent=95 \
     actionGroupResourceId="$action_group_resource_id"
 ```
 
-The resulting graph makes Foundry, Cosmos DB, and the workload siblings under the `Foundry Health Model Example` root. The existing Cosmos DB entity remains managed outside this template, while its root relationship is managed here.
+The resulting graph places Foundry Availability and suppressed Foundry Diagnostics under the root. Cosmos DB remains part of the application infrastructure but isn't represented in this Health Model.
+
+Resource-group deployments are incremental. When upgrading a graph created by an earlier version of this example, remove the obsolete Cosmos DB relationship once:
+
+```bash
+az rest \
+  --method delete \
+  --url "https://management.azure.com${health_model_resource_id}/relationships/health-root-to-cosmos?api-version=2026-05-01-preview"
+```
+
+Deleting the relationship doesn't delete the Cosmos DB account or an existing Cosmos DB entity.
+
+Earlier versions used separate workload, Application Insights, and OpenTelemetry entities. After consolidating the comparison entities under Foundry, remove these obsolete relationships if they exist:
+
+```bash
+for relationship_name in \
+  health-root-to-foundry \
+  foundry-to-diagnostics \
+  foundry-to-log-analytics \
+  foundry-to-otel-diagnostics \
+  health-root-to-token-efficiency \
+  token-efficiency-to-metrics \
+  token-efficiency-to-otel \
+  health-root-to-latency \
+  latency-to-metrics \
+  latency-to-otel \
+  diagnostics-to-otel \
+  health-root-to-workload \
+  chat-workload-to-log-analytics \
+  chat-workload-to-application-insights \
+  chat-workload-to-foundry-reliability \
+  chat-workload-to-opentelemetry; do
+  az rest \
+    --method delete \
+    --url "https://management.azure.com${health_model_resource_id}/relationships/${relationship_name}?api-version=2026-09-01-preview"
+done
+```
+
+Then remove the obsolete entities:
+
+```bash
+for entity_name in \
+  clinical-trial-chat-workload \
+  application-insights-api \
+  foundry-workload-reliability \
+  opentelemetry-dependencies \
+  token-efficiency \
+  foundry-token-efficiency-metrics \
+  foundry-token-efficiency-otel \
+  latency \
+  foundry-latency-metrics \
+  foundry-latency-otel \
+  otel-diagnostics; do
+  az rest \
+    --method delete \
+    --url "https://management.azure.com${health_model_resource_id}/entities/${entity_name}?api-version=2026-09-01-preview"
+done
+```
 
 ## Cost controls
 
 The default infrastructure uses:
 
 - Container Apps scale-to-zero with at most one replica.
+- A one-minute Container Apps Job probe with one request, no retries, and a 16-token completion cap.
 - Standard Static Web Apps, required for the linked Container Apps backend.
 - Cosmos DB serverless.
 - Basic Container Registry.

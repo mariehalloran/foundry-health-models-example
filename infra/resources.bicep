@@ -9,9 +9,7 @@ param modelCapacity int
 param memoryRetentionDays int
 param budgetStartDate string
 
-var resourceToken = toLower(
-  uniqueString(subscription().id, resourceGroup().id, location, environmentName)
-)
+var resourceToken = toLower(uniqueString(subscription().id, resourceGroup().id, location, environmentName))
 var commonTags = {
   'azd-env-name': environmentName
   application: 'clinical-trial-chat'
@@ -682,6 +680,21 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
   ]
 }
 
+module foundryHealthProbe 'foundry-health-probe.bicep' = {
+  name: 'foundry-health-probe'
+  params: {
+    environmentName: environmentName
+    location: location
+    containerRegistryName: containerRegistry.name
+    containerEnvironmentName: containerEnvironment.name
+    foundryAccountName: foundry.name
+    modelDeploymentName: modelDeployment.name
+  }
+  dependsOn: [
+    foundryPrivateDnsZoneGroup
+  ]
+}
+
 resource staticWebAppBackend 'Microsoft.Web/staticSites/linkedBackends@2025-03-01' = {
   name: uniqueString(containerApp.id)
   parent: staticWebApp
@@ -691,6 +704,7 @@ resource staticWebAppBackend 'Microsoft.Web/staticSites/linkedBackends@2025-03-0
   }
 }
 output containerAppName string = containerApp.name
+output probeJobName string = foundryHealthProbe.outputs.jobName
 output apiUrl string = 'https://${containerApp.properties.configuration.ingress.fqdn}'
 output applicationUrl string = 'https://${staticWebApp.properties.defaultHostname}'
 output staticWebAppName string = staticWebApp.name

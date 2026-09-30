@@ -1,6 +1,6 @@
 # AMPLS Recommendation for Health Models and OpenTelemetry Metrics
 
-Last reviewed: 2026-09-24
+Last reviewed: 2026-09-30
 
 ## Purpose
 
@@ -10,8 +10,9 @@ uses Azure Monitor Health Models to evaluate those metrics.
 
 The recommendation applies primarily to Foundry telemetry sent to a
 workspace-based Application Insights resource and stored in its Log Analytics
-workspace. It also describes the alternative Azure Monitor workspace and
-Managed Prometheus path.
+workspace. It also describes a direct Azure platform-metrics alternative that
+doesn't require application OTEL, plus the Azure Monitor workspace and Managed
+Prometheus path.
 
 Validate the behavior in the
 target region and API version before enforcing production network restrictions.
@@ -220,11 +221,57 @@ network access.
 
 This repository queries:
 
+- `foundry.requests`
 - `foundry.server_errors`
-- `gen_ai.client.operation.duration`
 
 The queries are defined in
 [`health-model-observability.bicep`](../infra/health-model-observability.bicep).
+
+The example's Foundry Availability - Azure Metrics entity uses direct platform metrics.
+It reads Azure Monitor metrics through the Health Model identity and doesn't use
+the Application Insights or AMPLS ingestion path. `Foundry Availability - Application OTEL`
+provides the equivalent workload-scoped health calculation.
+
+### Alternative: direct platform metrics without OTEL
+
+The deployed Foundry entity reads two platform metrics directly from the
+Foundry account:
+
+- `AzureOpenAIAvailabilityRate` supplies the HTTP 5xx ratio.
+- `AzureOpenAIRequests` supplies a five-minute minimum-traffic gate.
+
+It requires no custom application counters, metric export, diagnostic setting,
+or Log Analytics query for Foundry reliability. The Health Model identity needs
+`Monitoring Reader` on the Foundry resource or a containing scope.
+
+The reliability entity uses the `2026-09-01-preview` signal-aggregation
+contract. The request gate is intentionally **Unhealthy** when traffic reaches
+the configured minimum. A `BestOf` group then preserves the availability state
+only when the gate is open:
+
+| Five-minute request volume | Availability state | Group state |
+| --- | --- | --- |
+| Below the minimum | Any populated state | Healthy |
+| At or above the minimum | Healthy | Healthy |
+| At or above the minimum | Degraded | Degraded |
+| At or above the minimum | Unhealthy | Unhealthy |
+
+With the defaults, the gate opens at 20 requests, availability is Degraded at
+or below 99%, and availability is Unhealthy at or below 95%. Degraded
+reliability alerts at Sev2 and Unhealthy reliability alerts at Sev1.
+
+This relationship captures the expected correlation: if request volume remains
+stable while HTTP 5xx responses increase, availability falls and the group
+changes health. If errors increase only in proportion to traffic, availability
+remains stable.
+
+At zero traffic, both metrics can report `Unknown`. Idle intervals therefore
+don't create a threshold alert.
+
+The platform-metrics option bypasses the AMPLS telemetry-ingestion path for the
+Foundry reliability signal. Other Application Insights and Log Analytics
+signals in the example still require the query access and RBAC described in
+this document.
 
 ### 2. Create the AMPLS private path
 
@@ -349,6 +396,8 @@ policy.
 - [ ] The workload can reach the private endpoint on port 443.
 - [ ] Metrics continue to arrive after public ingestion is disabled.
 - [ ] The Health Model identity has workspace-level `Monitoring Reader`.
+- [ ] For direct Foundry platform signals, the Health Model identity has `Monitoring Reader`
+      on the Foundry resource or containing scope.
 - [ ] The selected Health Model authentication setting uses that identity.
 - [ ] The KQL or PromQL query returns one numeric result.
 - [ ] Health Model signals continue refreshing with query access open.
@@ -370,7 +419,11 @@ policy.
 | Signals fail only when public query is disabled | Evaluator has no private query route | Restore query access or use external evaluation |
 | Health workspace query returns no rows | Telemetry is routed only to the private workspace | Collector fan-out or projection worker configuration |
 | Sensitive data appears in the health workspace | Routing filter is too broad | Collector processors, metric allowlist, exported attributes |
-| Signal remains `Unknown` | Query returns no numeric record | Add explicit empty-window handling |
+| Signal has a value but remains `Unknown` | A dynamic threshold is still learning the metric series | Allow at least three days and 30 samples; confirm the status has no error |
+| Signal has no value and remains `Unknown` | No sample was emitted in the evaluation window | Confirm traffic, deployment applicability, metric availability, and time grain |
+| Signal is `Unknown` with an error | Query, metric, RBAC, or data-source configuration failed | Inspect the signal status error and correct the named failure |
+| Platform reliability stays `Unknown` during active traffic | Platform metrics aren't readable or populated | Foundry `Monitoring Reader`, metric availability, request volume, API version |
+| Platform reliability changes under low traffic | Minimum-request gate is too low | Increase `foundryPlatformMinimumRequests` |
 | PromQL query fails privately | Azure Monitor workspace query endpoint is missing | `prometheusMetrics` private endpoint and regional private DNS zone |
 
 ## References
@@ -382,5 +435,6 @@ policy.
 - [Design Azure Monitor private link configuration](https://learn.microsoft.com/azure/azure-monitor/fundamentals/private-link-design)
 - [Create an Azure Monitor Health Model](https://learn.microsoft.com/azure/azure-monitor/health-models/create)
 - [Configure signals in Azure Monitor Health Models](https://learn.microsoft.com/azure/azure-monitor/health-models/signals)
+- [Azure OpenAI monitoring data reference](https://learn.microsoft.com/azure/foundry/openai/monitor-openai-reference)
 - [Use private endpoints for Managed Prometheus and Azure Monitor workspace](https://learn.microsoft.com/azure/azure-monitor/fundamentals/private-link-azure-monitor-workspace)
 - [Submit externally evaluated health signals](https://learn.microsoft.com/azure/azure-monitor/health-models/health-report-ingestion)

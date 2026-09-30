@@ -8,6 +8,7 @@ public static class ChatTelemetry
     public const string ActivitySourceName = "ClinicalTrialChat.Api";
     public const string MeterName = "ClinicalTrialChat.Api";
     public const string OpenAiTelemetryName = "OpenAI.ChatClient";
+    public const string FoundryRequestsMetricName = "foundry.requests";
     public const string FoundryServerErrorsMetricName = "foundry.server_errors";
 
     public static ActivitySource ActivitySource { get; } =
@@ -15,11 +16,20 @@ public static class ChatTelemetry
 
     private static Meter Meter { get; } = new(MeterName);
 
+    private static Counter<long> FoundryRequests { get; } =
+        Meter.CreateCounter<long>(
+            FoundryRequestsMetricName,
+            unit: "{request}",
+            description: "Logical Foundry requests attempted by this workload.");
+
     private static Counter<long> FoundryServerErrors { get; } =
         Meter.CreateCounter<long>(
             FoundryServerErrorsMetricName,
             unit: "{request}",
             description: "Foundry requests that returned an HTTP server error.");
+
+    public static void RecordFoundryRequest() =>
+        FoundryRequests.Add(1);
 
     public static void RecordFoundryServerError() =>
         FoundryServerErrors.Add(1);

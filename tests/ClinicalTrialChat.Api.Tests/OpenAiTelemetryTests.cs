@@ -1,7 +1,10 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Net;
 using System.Text;
+using ClinicalTrialChat.Api.Configuration;
+using ClinicalTrialChat.Api.Models;
 using ClinicalTrialChat.Api.Services;
 using OpenAI;
 using OpenAI.Chat;
@@ -10,6 +13,7 @@ using System.ClientModel.Primitives;
 
 namespace ClinicalTrialChat.Api.Tests;
 
+[Collection(ChatTelemetryCollection.Name)]
 public sealed class OpenAiTelemetryTests
 {
     [Fact]
@@ -67,6 +71,56 @@ public sealed class OpenAiTelemetryTests
         {
             AppContext.SetSwitch("OpenAI.Experimental.EnableOpenTelemetry", false);
         }
+    }
+
+    [Fact]
+    public async Task GetReplyAsync_RecordsOneLogicalFoundryRequest()
+    {
+        var measurements = new ConcurrentQueue<long>();
+        using var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, meterListener) =>
+            {
+                if (instrument.Meter.Name == ChatTelemetry.MeterName
+                    && instrument.Name == ChatTelemetry.FoundryRequestsMetricName)
+                {
+                    meterListener.EnableMeasurementEvents(instrument);
+                }
+            }
+        };
+        listener.SetMeasurementEventCallback<long>(
+            (_, value, _, _) => measurements.Enqueue(value));
+        listener.Start();
+
+        using var httpClient = new HttpClient(new ChatCompletionHandler());
+        var client = new ChatClient(
+            "test-deployment",
+            new ApiKeyCredential("test-key"),
+            new OpenAIClientOptions
+            {
+                Endpoint = new Uri("https://foundry.example/openai/v1/"),
+                Transport = new HttpClientPipelineTransport(httpClient)
+            });
+        var service = new AzureFoundryChatService(
+            client,
+            new FoundryOptions(
+                new Uri("https://foundry.example/openai/v1/"),
+                "test-deployment",
+                600),
+            new EmptyStarterQuestionProvider());
+
+        var reply = await service.GetReplyAsync(
+            [],
+            "private test prompt",
+            CancellationToken.None);
+
+        Assert.Equal("private test response", reply);
+        Assert.Equal([1L], measurements);
+    }
+
+    private sealed class EmptyStarterQuestionProvider : IStarterQuestionProvider
+    {
+        public IReadOnlyList<StarterQuestion> Questions => [];
     }
 
     private sealed class ChatCompletionHandler : HttpMessageHandler

@@ -4,13 +4,16 @@ targetScope = 'resourceGroup'
 @minLength(3)
 param healthModelName string
 
-@description('Existing Foundry account entity that the workload depends on.')
+@description('Existing Foundry account entity.')
 @minLength(3)
 param foundryEntityName string
 
-@description('Existing Cosmos DB entity displayed beside Foundry and the workload.')
+@description('Full ARM resource ID of the Microsoft.CognitiveServices account.')
+param foundryResourceId string
+
+@description('Stable resource name for the Foundry diagnostics metrics entity.')
 @minLength(3)
-param cosmosEntityName string
+param foundryDiagnosticsEntityName string = 'foundry-diagnostics'
 
 @description('Health Model root entity.')
 @minLength(3)
@@ -20,96 +23,185 @@ param rootEntityName string = 'foundry'
 @minLength(3)
 param rootEntityDisplayName string = 'Foundry Health Model Example'
 
-@description('Stable resource name for the clinical trial chat workload entity.')
-@minLength(3)
-param workloadEntityName string = 'clinical-trial-chat-workload'
-
-@description('Container App name used to scope Log Analytics queries.')
-param containerAppName string
-
-@description('Full ARM resource ID of workspace-based Application Insights.')
-param appInsightsResourceId string
-
 @description('Full ARM resource ID of the Log Analytics workspace.')
 param logAnalyticsWorkspaceResourceId string
 
-@description('Action group that receives degraded and unhealthy workload alerts.')
+@description('Action group that receives Health Model alerts.')
 @minLength(1)
 param actionGroupResourceId string
 
 @description('Existing Health Model authentication setting.')
 param authenticationSettingName string = 'systemassigned'
 
-@description('Maximum Foundry client duration in one minute that degrades the OpenTelemetry entity.')
+@description('Minimum OTEL Foundry requests in five completed minutes before availability can affect health.')
 @minValue(1)
-param otelClientDurationDegradedThresholdMs int = 500
+param otelReliabilityMinimumRequests int = 20
 
-@description('Maximum Foundry client duration in one minute that makes the OpenTelemetry entity unhealthy.')
-@minValue(1)
-param otelClientDurationUnhealthyThresholdMs int = 10000
+@description('OTEL availability percentage that degrades reliability. Keep this above the unhealthy percentage.')
+@minValue(0)
+@maxValue(100)
+param otelDegradedAvailabilityPercent int = 99
 
-var apiServerErrorRateQuery = '''
-let result = AppRequests
-    | where TimeGenerated > ago(5m)
+@description('OTEL availability percentage that makes reliability unhealthy. Keep this below the degraded percentage.')
+@minValue(0)
+@maxValue(100)
+param otelUnhealthyAvailabilityPercent int = 95
+
+var foundryMetricNamespace = 'microsoft.cognitiveservices/accounts'
+var foundryDiagnosticEvaluationRules = {
+  unhealthyRule: {
+    operator: 'Dynamic'
+    sensitivity: 'Low'
+    lookBackWindow: 'PT1H'
+  }
+}
+var foundryDiagnosticSignals = [
+  {
+    name: 'foundry-diagnostic-token-transaction'
+    displayName: 'TokenTransaction'
+    signalKind: 'AzureResourceMetric'
+    metricNamespace: foundryMetricNamespace
+    metricName: 'TokenTransaction'
+    aggregationType: 'Total'
+    dataUnit: 'Count'
+    timeGrain: 'PT5M'
+    refreshInterval: 'PT5M'
+    evaluationRules: foundryDiagnosticEvaluationRules
+  }
+  {
+    name: 'foundry-diagnostic-time-between-tokens'
+    displayName: 'AzureOpenAINormalizedTBTInMS'
+    signalKind: 'AzureResourceMetric'
+    metricNamespace: foundryMetricNamespace
+    metricName: 'AzureOpenAINormalizedTBTInMS'
+    aggregationType: 'Average'
+    dataUnit: 'MilliSeconds'
+    timeGrain: 'PT5M'
+    refreshInterval: 'PT5M'
+    evaluationRules: foundryDiagnosticEvaluationRules
+  }
+  {
+    name: 'foundry-diagnostic-generated-tokens'
+    displayName: 'GeneratedTokens'
+    signalKind: 'AzureResourceMetric'
+    metricNamespace: foundryMetricNamespace
+    metricName: 'GeneratedTokens'
+    aggregationType: 'Total'
+    dataUnit: 'Count'
+    timeGrain: 'PT5M'
+    refreshInterval: 'PT5M'
+    evaluationRules: foundryDiagnosticEvaluationRules
+  }
+  {
+    name: 'foundry-diagnostic-time-to-last-byte'
+    displayName: 'AzureOpenAITTLTInMS'
+    signalKind: 'AzureResourceMetric'
+    metricNamespace: foundryMetricNamespace
+    metricName: 'AzureOpenAITTLTInMS'
+    aggregationType: 'Average'
+    dataUnit: 'MilliSeconds'
+    timeGrain: 'PT5M'
+    refreshInterval: 'PT5M'
+    evaluationRules: foundryDiagnosticEvaluationRules
+  }
+  {
+    name: 'foundry-diagnostic-normalized-first-byte'
+    displayName: 'AzureOpenAINormalizedTTFTInMS'
+    signalKind: 'AzureResourceMetric'
+    metricNamespace: foundryMetricNamespace
+    metricName: 'AzureOpenAINormalizedTTFTInMS'
+    aggregationType: 'Average'
+    dataUnit: 'MilliSeconds'
+    timeGrain: 'PT5M'
+    refreshInterval: 'PT5M'
+    evaluationRules: foundryDiagnosticEvaluationRules
+  }
+  {
+    name: 'foundry-diagnostic-prompt-tokens'
+    displayName: 'ProcessedPromptTokens'
+    signalKind: 'AzureResourceMetric'
+    metricNamespace: foundryMetricNamespace
+    metricName: 'ProcessedPromptTokens'
+    aggregationType: 'Total'
+    dataUnit: 'Count'
+    timeGrain: 'PT5M'
+    refreshInterval: 'PT5M'
+    evaluationRules: foundryDiagnosticEvaluationRules
+  }
+  {
+    name: 'foundry-diagnostic-blocked'
+    displayName: 'RAIRejectedRequests'
+    signalKind: 'AzureResourceMetric'
+    metricNamespace: foundryMetricNamespace
+    metricName: 'RAIRejectedRequests'
+    aggregationType: 'Total'
+    dataUnit: 'Count'
+    timeGrain: 'PT5M'
+    refreshInterval: 'PT5M'
+    evaluationRules: foundryDiagnosticEvaluationRules
+  }
+  {
+    name: 'foundry-diagnostic-harmful'
+    displayName: 'RAIHarmfulRequests'
+    signalKind: 'AzureResourceMetric'
+    metricNamespace: foundryMetricNamespace
+    metricName: 'RAIHarmfulRequests'
+    aggregationType: 'Total'
+    dataUnit: 'Count'
+    timeGrain: 'PT5M'
+    refreshInterval: 'PT5M'
+    evaluationRules: foundryDiagnosticEvaluationRules
+  }
+  {
+    name: 'foundry-diagnostic-safety-event'
+    displayName: 'RAISystemEvent'
+    signalKind: 'AzureResourceMetric'
+    metricNamespace: foundryMetricNamespace
+    metricName: 'RAISystemEvent'
+    aggregationType: 'Average'
+    dataUnit: 'Count'
+    timeGrain: 'PT5M'
+    refreshInterval: 'PT5M'
+    evaluationRules: foundryDiagnosticEvaluationRules
+  }
+  {
+    name: 'foundry-diagnostic-safety-volume'
+    displayName: 'RAITotalRequests'
+    signalKind: 'AzureResourceMetric'
+    metricNamespace: foundryMetricNamespace
+    metricName: 'RAITotalRequests'
+    aggregationType: 'Total'
+    dataUnit: 'Count'
+    timeGrain: 'PT5M'
+    refreshInterval: 'PT5M'
+    evaluationRules: foundryDiagnosticEvaluationRules
+  }
+]
+var otelAvailabilitySignalName = 'otel-foundry-availability'
+var otelVolumeGateSignalName = 'otel-foundry-volume-gate'
+var otelAvailabilityQuery = '''
+let EvaluationEnd = ago(2m);
+AppMetrics
+    | where TimeGenerated between (EvaluationEnd - 5m .. EvaluationEnd)
     | where AppRoleName endswith "clinical-trial-chat-api"
-    | where Name !endswith "/health"
-    | summarize Total = sum(ItemCount), ServerErrors = sumif(ItemCount, toint(ResultCode) between (500 .. 599))
-    | extend ServerErrorRateBasisPoints = toint(iff(Total == 0, 0.0, todouble(ServerErrors) / todouble(Total) * 10000.0))
-    | project ServerErrorRateBasisPoints;
-union result, (print ServerErrorRateBasisPoints = toint(0))
-| summarize ServerErrorRateBasisPoints = max(ServerErrorRateBasisPoints)
+    | where Name in ("foundry.requests", "foundry.server_errors")
+    | summarize
+        Total = tolong(sumif(Sum, Name == "foundry.requests")),
+        ServerErrors = tolong(sumif(Sum, Name == "foundry.server_errors"))
+    | project AvailabilityPercent = toint(
+        iff(
+            Total == 0,
+            100.0,
+            todouble(Total - ServerErrors) / todouble(Total) * 100.0))
 '''
-
-var apiP95DurationQuery = '''
-let result = AppRequests
-    | where TimeGenerated > ago(1m)
+var otelRequestCountQuery = '''
+let EvaluationEnd = ago(2m);
+AppMetrics
+    | where TimeGenerated between (EvaluationEnd - 5m .. EvaluationEnd)
     | where AppRoleName endswith "clinical-trial-chat-api"
-    | summarize P95DurationMs = toint(coalesce(percentile(DurationMs, 95), 0.0));
-union result, (print P95DurationMs = toint(0))
-| summarize P95DurationMs = max(P95DurationMs)
+    | where Name == "foundry.requests"
+    | summarize RequestCount = tolong(sum(Sum))
 '''
-
-var otelFoundryServerErrorQuery = '''
-let result = AppMetrics
-    | where TimeGenerated > ago(1m)
-    | where AppRoleName endswith "clinical-trial-chat-api"
-    | where Name == "foundry.server_errors"
-    | summarize FoundryServerErrors = toint(sum(Sum));
-union result, (print FoundryServerErrors = toint(0))
-| summarize FoundryServerErrors = max(FoundryServerErrors)
-'''
-
-var otelFoundryClientDurationQuery = '''
-let result = AppMetrics
-    | where TimeGenerated > ago(1m)
-    | where AppRoleName endswith "clinical-trial-chat-api"
-    | where Name == "gen_ai.client.operation.duration"
-    | summarize FoundryClientDurationMs = toint(coalesce(max(Max), 0.0) * 1000.0);
-union result, (print FoundryClientDurationMs = toint(0))
-| summarize FoundryClientDurationMs = max(FoundryClientDurationMs)
-'''
-
-var runtimeConsoleErrorQuery = replace('''
-let result = ContainerAppConsoleLogs_CL
-    | where TimeGenerated > ago(1m)
-    | where ContainerAppName_s == "{{containerAppName}}"
-    | where Stream_s =~ "stderr"
-        or Log_s has "fail:"
-        or Log_s has "Unhandled exception"
-    | summarize RuntimeErrors = count();
-union result, (print RuntimeErrors = tolong(0))
-| summarize RuntimeErrors = max(RuntimeErrors)
-''', '{{containerAppName}}', containerAppName)
-
-var ingressServerErrorQuery = replace('''
-let result = ContainerAppHTTPLogs
-    | where TimeGenerated > ago(1m)
-    | where ContainerAppName == "{{containerAppName}}"
-    | where StatusCode >= 500
-    | summarize IngressServerErrors = count();
-union result, (print IngressServerErrors = tolong(0))
-| summarize IngressServerErrors = max(IngressServerErrors)
-''', '{{containerAppName}}', containerAppName)
 
 resource healthModel 'Microsoft.CloudHealth/healthmodels@2026-05-01-preview' existing = {
   name: healthModelName
@@ -122,48 +214,46 @@ resource rootEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-prev
     displayName: rootEntityDisplayName
     impact: 'Standard'
     canvasPosition: {
-      x: -10
-      y: 20
+      x: 200
+      y: 0
     }
-    alerts: {
-      unhealthy: {
-        actionGroupIds: [
-          actionGroupResourceId
-        ]
-        description: '${rootEntityDisplayName} is unhealthy.'
-        severity: 'Sev1'
+    alerts: {}
+    signalGroups: {
+      dependencies: {
+        aggregationType: 'WorstOf'
+        ignoreUnknown: true
       }
     }
   }
 }
 
-resource workloadEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-preview' = {
-  name: workloadEntityName
+resource availabilityEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-preview' = {
+  name: 'reliability'
   parent: healthModel
   properties: {
-    displayName: 'Clinical Trial Chat Workload'
+    displayName: 'Foundry Availability'
     impact: 'Standard'
     healthObjective: 99
     icon: {
       iconName: 'SystemComponent'
     }
     canvasPosition: {
-      x: -10
-      y: 320
+      x: -200
+      y: 180
     }
     alerts: {
       degraded: {
         actionGroupIds: [
           actionGroupResourceId
         ]
-        description: 'Clinical Trial Chat workload health is degraded.'
+        description: 'Foundry availability is degraded.'
         severity: 'Sev2'
       }
       unhealthy: {
         actionGroupIds: [
           actionGroupResourceId
         ]
-        description: 'Clinical Trial Chat workload is unhealthy and user impact is likely.'
+        description: 'Foundry availability is unhealthy and user impact is likely.'
         severity: 'Sev1'
       }
     }
@@ -176,74 +266,126 @@ resource workloadEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-
   }
 }
 
-resource appInsightsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-preview' = {
-  name: 'application-insights-api'
+resource diagnosticsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-preview' = {
+  name: 'diagnostics'
   parent: healthModel
   properties: {
-    displayName: 'Application Insights - API'
-    impact: 'Standard'
+    displayName: 'Foundry Diagnostics'
+    impact: 'Suppressed'
+    icon: {
+      iconName: 'Analysis'
+    }
+    canvasPosition: {
+      x: 600
+      y: 180
+    }
     alerts: {
       unhealthy: {
         actionGroupIds: [
           actionGroupResourceId
         ]
-        description: 'Application Insights API health is unhealthy.'
+        description: 'Foundry diagnostics detected a significant anomaly.'
         severity: 'Sev3'
       }
     }
+    signalGroups: {
+      dependencies: {
+        aggregationType: 'WorstOf'
+        ignoreUnknown: true
+      }
+    }
+  }
+}
+
+resource foundryDiagnosticsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-preview' = {
+  name: foundryDiagnosticsEntityName
+  parent: healthModel
+  properties: {
+    displayName: 'Diagnostics - Azure Metrics'
+    impact: 'Standard'
+    alerts: {}
     icon: {
-      iconName: 'AppService'
+      iconName: 'Analysis'
     }
     canvasPosition: {
-      x: -330
-      y: 530
+      x: 600
+      y: 420
     }
     signalGroups: {
       azureResource: {
         authenticationSetting: authenticationSettingName
-        azureResourceId: appInsightsResourceId
+        azureResourceId: foundryResourceId
+        signals: foundryDiagnosticSignals
       }
+    }
+  }
+}
+
+// Signal aggregation groups require 2026-09-01-preview, which can be newer than the bundled Bicep type index.
+#disable-next-line BCP081
+resource otelAvailabilityEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-09-01-preview' = {
+  name: 'log-analytics-runtime'
+  parent: healthModel
+  properties: {
+    displayName: 'Foundry Availability - Application OTEL'
+    impact: 'Standard'
+    alerts: {}
+    icon: {
+      iconName: 'Resource'
+    }
+    canvasPosition: {
+      x: 0
+      y: 420
+    }
+    signalAggregationGroups: [
+      {
+        name: 'otel-reliability-gate'
+        displayName: 'OTEL availability with minimum traffic'
+        aggregationType: 'BestOf'
+        members: [
+          otelAvailabilitySignalName
+          otelVolumeGateSignalName
+        ]
+      }
+    ]
+    signalGroups: {
       azureLogAnalytics: {
         authenticationSetting: authenticationSettingName
         logAnalyticsWorkspaceResourceId: logAnalyticsWorkspaceResourceId
         signals: [
           {
-            name: 'appinsights-api-error-rate'
-            displayName: 'Application Insights API HTTP 5xx rate'
+            name: otelAvailabilitySignalName
+            displayName: 'foundry.availability_rate'
             signalKind: 'LogAnalyticsQuery'
-            queryText: apiServerErrorRateQuery
-            valueColumnName: 'ServerErrorRateBasisPoints'
-            dataUnit: 'BasisPoints'
+            queryText: otelAvailabilityQuery
+            valueColumnName: 'AvailabilityPercent'
+            dataUnit: 'Percent'
             timeGrain: 'PT5M'
             refreshInterval: 'PT1M'
             evaluationRules: {
               degradedRule: {
-                operator: 'GreaterThan'
-                threshold: 100
+                operator: 'LessThanOrEqual'
+                threshold: otelDegradedAvailabilityPercent
               }
               unhealthyRule: {
-                operator: 'GreaterThan'
-                threshold: 500
+                operator: 'LessThanOrEqual'
+                threshold: otelUnhealthyAvailabilityPercent
               }
             }
           }
           {
-            name: 'appinsights-api-p95'
-            displayName: 'Application Insights API P95 duration'
+            name: otelVolumeGateSignalName
+            displayName: 'foundry.requests'
             signalKind: 'LogAnalyticsQuery'
-            queryText: apiP95DurationQuery
-            valueColumnName: 'P95DurationMs'
-            dataUnit: 'MilliSeconds'
-            timeGrain: 'PT1M'
+            queryText: otelRequestCountQuery
+            valueColumnName: 'RequestCount'
+            dataUnit: 'Count'
+            timeGrain: 'PT5M'
             refreshInterval: 'PT1M'
             evaluationRules: {
-              degradedRule: {
-                operator: 'GreaterThan'
-                threshold: 15000
-              }
               unhealthyRule: {
-                operator: 'GreaterThan'
-                threshold: 30000
+                operator: 'GreaterThanOrEqual'
+                threshold: otelReliabilityMinimumRequests
               }
             }
           }
@@ -253,213 +395,56 @@ resource appInsightsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-
   }
 }
 
-resource openTelemetryEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-preview' = {
-  name: 'opentelemetry-dependencies'
-  parent: healthModel
-  properties: {
-    displayName: 'OpenTelemetry - Foundry'
-    impact: 'Standard'
-    alerts: {
-      unhealthy: {
-        actionGroupIds: [
-          actionGroupResourceId
-        ]
-        description: 'OpenTelemetry Foundry dependency health is unhealthy.'
-        severity: 'Sev3'
-      }
-    }
-    icon: {
-      iconName: 'Resource'
-    }
-    canvasPosition: {
-      x: -10
-      y: 630
-    }
-    signalGroups: {
-      azureLogAnalytics: {
-        authenticationSetting: authenticationSettingName
-        logAnalyticsWorkspaceResourceId: logAnalyticsWorkspaceResourceId
-        signals: [
-          {
-            name: 'otel-foundry-server-errors'
-            displayName: 'OpenTelemetry Foundry HTTP 5xx errors'
-            signalKind: 'LogAnalyticsQuery'
-            queryText: otelFoundryServerErrorQuery
-            valueColumnName: 'FoundryServerErrors'
-            dataUnit: 'Count'
-            timeGrain: 'PT1M'
-            refreshInterval: 'PT1M'
-            evaluationRules: {
-              degradedRule: {
-                operator: 'GreaterThan'
-                threshold: 0
-              }
-              unhealthyRule: {
-                operator: 'GreaterThan'
-                threshold: 3
-              }
-            }
-          }
-          {
-            name: 'otel-foundry-client-duration'
-            displayName: 'OpenTelemetry Foundry client duration'
-            signalKind: 'LogAnalyticsQuery'
-            queryText: otelFoundryClientDurationQuery
-            valueColumnName: 'FoundryClientDurationMs'
-            dataUnit: 'MilliSeconds'
-            timeGrain: 'PT1M'
-            refreshInterval: 'PT1M'
-            evaluationRules: {
-              degradedRule: {
-                operator: 'GreaterThan'
-                threshold: otelClientDurationDegradedThresholdMs
-              }
-              unhealthyRule: {
-                operator: 'GreaterThan'
-                threshold: otelClientDurationUnhealthyThresholdMs
-              }
-            }
-          }
-        ]
-      }
-    }
-  }
-}
-
-resource logAnalyticsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-preview' = {
-  name: 'log-analytics-runtime'
-  parent: healthModel
-  properties: {
-    displayName: 'Log Analytics - Runtime'
-    impact: 'Standard'
-    alerts: {
-      unhealthy: {
-        actionGroupIds: [
-          actionGroupResourceId
-        ]
-        description: 'Log Analytics runtime health is unhealthy.'
-        severity: 'Sev3'
-      }
-    }
-    icon: {
-      iconName: 'Resource'
-    }
-    canvasPosition: {
-      x: 340
-      y: 530
-    }
-    signalGroups: {
-      azureLogAnalytics: {
-        authenticationSetting: authenticationSettingName
-        logAnalyticsWorkspaceResourceId: logAnalyticsWorkspaceResourceId
-        signals: [
-          {
-            name: 'runtime-console-errors'
-            displayName: 'Container runtime errors'
-            signalKind: 'LogAnalyticsQuery'
-            queryText: runtimeConsoleErrorQuery
-            valueColumnName: 'RuntimeErrors'
-            dataUnit: 'Count'
-            timeGrain: 'PT1M'
-            refreshInterval: 'PT1M'
-            evaluationRules: {
-              degradedRule: {
-                operator: 'GreaterThan'
-                threshold: 5
-              }
-              unhealthyRule: {
-                operator: 'GreaterThan'
-                threshold: 20
-              }
-            }
-          }
-          {
-            name: 'runtime-ingress-server-errors'
-            displayName: 'Container ingress 5xx responses'
-            signalKind: 'LogAnalyticsQuery'
-            queryText: ingressServerErrorQuery
-            valueColumnName: 'IngressServerErrors'
-            dataUnit: 'Count'
-            timeGrain: 'PT1M'
-            refreshInterval: 'PT1M'
-            evaluationRules: {
-              degradedRule: {
-                operator: 'GreaterThan'
-                threshold: 0
-              }
-              unhealthyRule: {
-                operator: 'GreaterThan'
-                threshold: 5
-              }
-            }
-          }
-        ]
-      }
-    }
-  }
-}
-
-resource rootFoundryRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
-  name: 'health-root-to-foundry'
+resource rootAvailabilityRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
+  name: 'health-root-to-reliability'
   parent: healthModel
   properties: {
     parentEntityName: rootEntity.name
+    childEntityName: availabilityEntity.name
+    displayName: 'Foundry Availability'
+  }
+}
+
+resource rootDiagnosticsRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
+  name: 'health-root-to-diagnostics'
+  parent: healthModel
+  properties: {
+    parentEntityName: rootEntity.name
+    childEntityName: diagnosticsEntity.name
+    displayName: 'Foundry Diagnostics'
+  }
+}
+
+resource availabilityMetricsRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
+  name: 'reliability-to-foundry'
+  parent: healthModel
+  properties: {
+    parentEntityName: availabilityEntity.name
     childEntityName: foundryEntityName
-    displayName: 'Health Model root to Microsoft Foundry'
+    displayName: 'Foundry Availability - Azure Metrics'
   }
 }
 
-resource rootWorkloadRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
-  name: 'health-root-to-workload'
+resource availabilityOtelRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
+  name: 'reliability-to-otel'
   parent: healthModel
   properties: {
-    parentEntityName: rootEntity.name
-    childEntityName: workloadEntity.name
-    displayName: 'Health Model root to workload'
+    parentEntityName: availabilityEntity.name
+    childEntityName: otelAvailabilityEntity.name
+    displayName: 'Foundry Availability - Application OTEL'
   }
 }
 
-resource rootCosmosRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
-  name: 'health-root-to-cosmos'
+resource diagnosticsMetricsRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
+  name: 'diagnostics-to-foundry-metrics'
   parent: healthModel
   properties: {
-    parentEntityName: rootEntity.name
-    childEntityName: cosmosEntityName
-    displayName: 'Health Model root to Azure Cosmos DB'
+    parentEntityName: diagnosticsEntity.name
+    childEntityName: foundryDiagnosticsEntity.name
+    displayName: 'Diagnostics - Azure Metrics'
   }
 }
 
-resource workloadAppInsightsRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
-  name: 'chat-workload-to-application-insights'
-  parent: healthModel
-  properties: {
-    parentEntityName: workloadEntity.name
-    childEntityName: appInsightsEntity.name
-    displayName: 'Workload to Application Insights'
-  }
-}
-
-resource workloadOpenTelemetryRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
-  name: 'chat-workload-to-opentelemetry'
-  parent: healthModel
-  properties: {
-    parentEntityName: workloadEntity.name
-    childEntityName: openTelemetryEntity.name
-    displayName: 'Workload to OpenTelemetry'
-  }
-}
-
-resource workloadLogAnalyticsRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
-  name: 'chat-workload-to-log-analytics'
-  parent: healthModel
-  properties: {
-    parentEntityName: workloadEntity.name
-    childEntityName: logAnalyticsEntity.name
-    displayName: 'Workload to Log Analytics'
-  }
-}
-
-output workloadEntityName string = workloadEntity.name
-output configuredEntityCount int = 5
-output configuredSignalCount int = 6
-output configuredRelationshipCount int = 6
+output configuredEntityCount int = 4
+output configuredSignalCount int = 12
+output configuredRelationshipCount int = 5

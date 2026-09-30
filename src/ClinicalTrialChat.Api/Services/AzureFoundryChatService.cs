@@ -41,6 +41,7 @@ public sealed class AzureFoundryChatService(
             MaxOutputTokenCount = options.MaxOutputTokens
         };
         ChatCompletion completion;
+        ChatTelemetry.RecordFoundryRequest();
         try
         {
             completion = await chatClient.CompleteChatAsync(
