@@ -22,6 +22,7 @@ required_variables=(
   AZURE_SUBSCRIPTION_ID
   AZURE_LOCATION
   BUDGET_CONTACT_EMAIL
+  HEALTH_ALERT_EMAIL
 )
 
 for variable_name in "${required_variables[@]}"; do
@@ -84,6 +85,7 @@ azd env set AZURE_SUBSCRIPTION_ID "$AZURE_SUBSCRIPTION_ID"
 azd env set AZURE_LOCATION "$AZURE_LOCATION"
 azd env set AZURE_PRINCIPAL_ID "$AZURE_PRINCIPAL_ID"
 azd env set BUDGET_CONTACT_EMAIL "$BUDGET_CONTACT_EMAIL"
+azd env set HEALTH_ALERT_EMAIL "$HEALTH_ALERT_EMAIL"
 
 printf '\nAzure context configured. Review it before deployment:\n'
 azd env get-values

@@ -24,9 +24,14 @@ internal static class ProbeProgram
         {
             var result = await probe.ExecuteAsync(timeout.Token);
             Console.WriteLine(
-                "Foundry synthetic probe succeeded in {0} ms. Request ID: {1}.",
+                "Foundry synthetic probe completed {0} requests in {1} ms. " +
+                "Request IDs: {2}.",
+                result.Requests.Count,
                 Math.Round(result.Duration.TotalMilliseconds),
-                result.RequestId ?? "unavailable");
+                string.Join(
+                    ", ",
+                    result.Requests.Select(
+                        request => request.RequestId ?? "unavailable")));
             return 0;
         }
         catch (OperationCanceledException) when (timeout.IsCancellationRequested)

@@ -100,13 +100,14 @@ AZURE_SUBSCRIPTION_ID=<your-subscription-guid>
 AZURE_LOCATION=eastus2
 AZURE_PRINCIPAL_ID=<optional-user-object-guid>
 BUDGET_CONTACT_EMAIL=you@example.com
+HEALTH_ALERT_EMAIL=on-call@example.com
 ```
 
 `deployment.env` is ignored by Git. Do not put personal tenant IDs, subscription IDs, or email addresses in `deployment.env.example`, Bicep, or source code.
 
 `AZURE_PRINCIPAL_ID` is optional. Set it to your user object ID when you want the Bicep deployment to assign your account the Foundry and Cosmos DB data-plane roles needed for full local-with-Azure testing.
 
-`BUDGET_CONTACT_EMAIL` receives both Cost Management budget notifications and Health Model alerts.
+`BUDGET_CONTACT_EMAIL` receives Cost Management budget notifications. `HEALTH_ALERT_EMAIL` is the independently configurable email receiver for the Azure Monitor Action Group used by Health Model alerts.
 
 Authenticate and copy these values into the local `azd` environment:
 
@@ -591,7 +592,9 @@ Review the confirmation carefully. This permanently deletes the environment's re
 
 ## Verify the scheduled Foundry probe
 
-The `probe` service deploys a scheduled Container Apps Job into the private environment. It makes one 16-token request per minute with no retries, a 45-second application timeout, and a 55-second job timeout. Its five requests per five-minute window remain below the default availability gate of 20.
+The `probe` service deploys a scheduled Container Apps Job into the private environment. Each one-minute execution makes five concurrent requests with a 16-token completion cap, no retries, a 45-second application timeout, and a 55-second job timeout. The model deployment defaults to 10 RPM, leaving approximately 5 RPM for application traffic.
+
+The probe contributes approximately 25 requests per five-minute window and intentionally opens the platform availability gate of 20. It doesn't increment the Application OTEL counters because it runs in a separate process. At the observed token mix, its model requests cost about $47.65 per 30-day month, plus Container Apps execution and logging costs.
 
 Deploy only this service after probe code changes:
 

@@ -1,4 +1,5 @@
 using System.Net;
+using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 using Azure.Core;
@@ -79,43 +80,70 @@ public sealed class FoundryAvailabilityProbeTests
 
         var result = await probe.ExecuteAsync(CancellationToken.None);
 
-        Assert.Equal("OK", result.ResponseText);
-        Assert.Equal("request-123", result.RequestId);
+        Assert.Equal(
+            FoundryAvailabilityProbe.RequestsPerExecution,
+            result.Requests.Count);
+        Assert.All(result.Requests, result =>
+        {
+            Assert.Equal("OK", result.ResponseText);
+            Assert.StartsWith(
+                "request-",
+                result.RequestId,
+                StringComparison.Ordinal);
+        });
         var scopes = Assert.IsType<string[]>(credential.Scopes);
         Assert.Equal(["https://ai.azure.com/.default"], scopes);
-        Assert.NotNull(handler.Request);
+        Assert.Equal(1, credential.RequestCount);
         Assert.Equal(
-            new Uri("https://foundry.example/openai/v1/chat/completions"),
-            handler.Request.RequestUri);
-        Assert.Equal(
-            "Bearer",
-            handler.Request.Headers.Authorization?.Scheme);
-        Assert.Equal(
-            "probe-token",
-            handler.Request.Headers.Authorization?.Parameter);
+            FoundryAvailabilityProbe.RequestsPerExecution,
+            handler.Requests.Count);
 
-        using var body = JsonDocument.Parse(handler.RequestBody!);
-        Assert.Equal(
-            "probe-model",
-            body.RootElement.GetProperty("model").GetString());
-        Assert.Equal(
-            FoundryAvailabilityProbe.MaxCompletionTokens,
-            body.RootElement.GetProperty("max_completion_tokens").GetInt32());
-        Assert.Equal(
-            "Reply OK.",
-            body.RootElement
-                .GetProperty("messages")[0]
-                .GetProperty("content")
-                .GetString());
-        Assert.Single(body.RootElement.GetProperty("messages").EnumerateArray());
+        Assert.All(handler.Requests, request =>
+        {
+            Assert.Equal(
+                new Uri("https://foundry.example/openai/v1/chat/completions"),
+                request.RequestUri);
+            Assert.Equal("Bearer", request.AuthorizationScheme);
+            Assert.Equal("probe-token", request.AuthorizationParameter);
+
+            using var body = JsonDocument.Parse(request.Body);
+            Assert.Equal(
+                "probe-model",
+                body.RootElement.GetProperty("model").GetString());
+            Assert.Equal(
+                FoundryAvailabilityProbe.MaxCompletionTokens,
+                body.RootElement
+                    .GetProperty("max_completion_tokens")
+                    .GetInt32());
+            Assert.Equal(
+                "Reply OK.",
+                body.RootElement
+                    .GetProperty("messages")[0]
+                    .GetProperty("content")
+                    .GetString());
+            Assert.Single(
+                body.RootElement.GetProperty("messages").EnumerateArray());
+        });
     }
 
     [Fact]
-    public async Task ExecuteAsync_DoesNotRetryFailedFoundryCall()
+    public async Task ExecuteAsync_FailsWhenAnyRequestFailsWithoutRetry()
     {
         var handler = new RecordingHandler(
-            "{}",
-            HttpStatusCode.ServiceUnavailable);
+            """
+            {
+              "choices": [
+                {
+                  "message": {
+                    "content": "OK"
+                  }
+                }
+              ]
+            }
+            """,
+            requestNumber => requestNumber == 3
+                ? HttpStatusCode.ServiceUnavailable
+                : HttpStatusCode.OK);
         using var httpClient = new HttpClient(handler);
         var options = new ProbeOptions(
             new Uri("https://foundry.example/"),
@@ -131,8 +159,10 @@ public sealed class FoundryAvailabilityProbeTests
             () => probe.ExecuteAsync(CancellationToken.None));
 
         Assert.Equal(HttpStatusCode.ServiceUnavailable, exception.StatusCode);
-        Assert.Contains("request-123", exception.Message, StringComparison.Ordinal);
-        Assert.Equal(1, handler.RequestCount);
+        Assert.Contains("request-3", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(
+            FoundryAvailabilityProbe.RequestsPerExecution,
+            handler.Requests.Count);
     }
 
     [Fact]
@@ -164,18 +194,23 @@ public sealed class FoundryAvailabilityProbeTests
         var exception = await Assert.ThrowsAsync<InvalidDataException>(
             () => probe.ExecuteAsync(CancellationToken.None));
 
-        Assert.Contains("request-123", exception.Message, StringComparison.Ordinal);
-        Assert.Equal(1, handler.RequestCount);
+        Assert.Contains("request-", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(
+            FoundryAvailabilityProbe.RequestsPerExecution,
+            handler.Requests.Count);
     }
 
     private sealed class RecordingTokenCredential : TokenCredential
     {
         public string[]? Scopes { get; private set; }
 
+        public int RequestCount { get; private set; }
+
         public override AccessToken GetToken(
             TokenRequestContext requestContext,
             CancellationToken cancellationToken)
         {
+            RequestCount++;
             Scopes = requestContext.Scopes;
             return CreateToken();
         }
@@ -184,6 +219,7 @@ public sealed class FoundryAvailabilityProbeTests
             TokenRequestContext requestContext,
             CancellationToken cancellationToken)
         {
+            RequestCount++;
             Scopes = requestContext.Scopes;
             return ValueTask.FromResult(CreateToken());
         }
@@ -194,33 +230,51 @@ public sealed class FoundryAvailabilityProbeTests
 
     private sealed class RecordingHandler(
         string responseBody,
-        HttpStatusCode statusCode = HttpStatusCode.OK)
+        Func<int, HttpStatusCode>? statusCodeProvider = null)
         : HttpMessageHandler
     {
-        public HttpRequestMessage? Request { get; private set; }
+        private readonly ConcurrentQueue<RecordedRequest> _requests = new();
+        private int _requestCount;
 
-        public string? RequestBody { get; private set; }
+        public RecordingHandler(
+            string responseBody,
+            HttpStatusCode statusCode)
+            : this(responseBody, _ => statusCode)
+        {
+        }
 
-        public int RequestCount { get; private set; }
+        public IReadOnlyList<RecordedRequest> Requests =>
+            _requests.ToArray();
 
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
-            RequestCount++;
-            Request = request;
-            RequestBody = await request.Content!.ReadAsStringAsync(
+            var requestNumber = Interlocked.Increment(ref _requestCount);
+            var requestBody = await request.Content!.ReadAsStringAsync(
                 cancellationToken);
+            _requests.Enqueue(new RecordedRequest(
+                request.RequestUri,
+                request.Headers.Authorization?.Scheme,
+                request.Headers.Authorization?.Parameter,
+                requestBody));
 
-            var response = new HttpResponseMessage(statusCode)
+            var response = new HttpResponseMessage(
+                statusCodeProvider?.Invoke(requestNumber) ?? HttpStatusCode.OK)
             {
                 Content = new StringContent(
                     responseBody,
                     Encoding.UTF8,
                     "application/json")
             };
-            response.Headers.Add("x-request-id", "request-123");
+            response.Headers.Add("x-request-id", $"request-{requestNumber}");
             return response;
         }
     }
+
+    private sealed record RecordedRequest(
+        Uri? RequestUri,
+        string? AuthorizationScheme,
+        string? AuthorizationParameter,
+        string Body);
 }

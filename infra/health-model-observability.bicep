@@ -247,14 +247,14 @@ resource availabilityEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05
           actionGroupResourceId
         ]
         description: 'Foundry availability is degraded.'
-        severity: 'Sev2'
+        severity: 'Sev3'
       }
       unhealthy: {
         actionGroupIds: [
           actionGroupResourceId
         ]
         description: 'Foundry availability is unhealthy and user impact is likely.'
-        severity: 'Sev1'
+        severity: 'Sev2'
       }
     }
     signalGroups: {

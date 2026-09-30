@@ -4,6 +4,7 @@ param environmentName string
 param location string
 param principalId string
 param budgetContactEmail string
+param healthAlertEmail string
 param monthlyBudgetAmount int
 param modelCapacity int
 param memoryRetentionDays int
@@ -237,7 +238,7 @@ module observability 'observability.bicep' = {
     location: location
     logAnalyticsWorkspaceName: logAnalytics.name
     managedIdentityName: managedIdentity.name
-    alertEmailAddress: budgetContactEmail
+    alertEmailAddress: healthAlertEmail
   }
 }
 

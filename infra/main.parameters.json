@@ -13,6 +13,9 @@
     },
     "budgetContactEmail": {
       "value": "${BUDGET_CONTACT_EMAIL}"
+    },
+    "healthAlertEmail": {
+      "value": "${HEALTH_ALERT_EMAIL}"
     }
   }
 }

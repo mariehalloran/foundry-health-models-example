@@ -11,9 +11,13 @@ param location string = 'eastus2'
 @description('Object ID of the person running azd. Leave empty to skip local-development data-plane roles.')
 param principalId string = ''
 
-@description('Email address that receives Azure Cost Management budget and Health Model alerts.')
+@description('Email address that receives Azure Cost Management budget notifications.')
 @minLength(3)
 param budgetContactEmail string
+
+@description('Email address that receives Azure Monitor Health Model alerts.')
+@minLength(3)
+param healthAlertEmail string
 
 @description('Monthly resource-group budget in USD. Azure budgets send alerts; they do not stop resources.')
 @minValue(1)
@@ -22,8 +26,8 @@ param monthlyBudgetAmount int = 500
 
 @description('Model throughput capacity in thousands of tokens per minute. This limits throughput, not monthly spend.')
 @minValue(1)
-@maxValue(5)
-param modelCapacity int = 2
+@maxValue(1000)
+param modelCapacity int = 10
 
 @description('Number of days that demo conversation messages remain in Cosmos DB.')
 @minValue(1)
@@ -54,6 +58,7 @@ module resources 'resources.bicep' = {
     location: location
     principalId: principalId
     budgetContactEmail: budgetContactEmail
+    healthAlertEmail: healthAlertEmail
     monthlyBudgetAmount: monthlyBudgetAmount
     modelCapacity: modelCapacity
     memoryRetentionDays: memoryRetentionDays

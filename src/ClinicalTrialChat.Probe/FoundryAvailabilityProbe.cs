@@ -12,6 +12,7 @@ internal sealed class FoundryAvailabilityProbe(
     ProbeOptions options)
 {
     internal const int MaxCompletionTokens = 16;
+    internal const int RequestsPerExecution = 5;
     private static readonly string[] TokenScopes = ["https://ai.azure.com/.default"];
     private readonly Uri _requestUri =
         new(options.Endpoint, "openai/v1/chat/completions");
@@ -22,9 +23,26 @@ internal sealed class FoundryAvailabilityProbe(
             new TokenRequestContext(TokenScopes),
             cancellationToken);
 
+        var stopwatch = Stopwatch.StartNew();
+        var requests = Enumerable
+            .Range(0, RequestsPerExecution)
+            .Select(_ => ExecuteRequestAsync(
+                accessToken.Token,
+                cancellationToken))
+            .ToArray();
+        var results = await Task.WhenAll(requests);
+        stopwatch.Stop();
+
+        return new ProbeResult(stopwatch.Elapsed, results);
+    }
+
+    private async Task<ProbeRequestResult> ExecuteRequestAsync(
+        string accessToken,
+        CancellationToken cancellationToken)
+    {
         using var request = new HttpRequestMessage(HttpMethod.Post, _requestUri);
         request.Headers.Authorization =
-            new AuthenticationHeaderValue("Bearer", accessToken.Token);
+            new AuthenticationHeaderValue("Bearer", accessToken);
         request.Headers.UserAgent.ParseAdd("clinical-trial-chat-foundry-probe/1.0");
         request.Content = JsonContent.Create(new
         {
@@ -40,12 +58,10 @@ internal sealed class FoundryAvailabilityProbe(
             max_completion_tokens = MaxCompletionTokens
         });
 
-        var stopwatch = Stopwatch.StartNew();
         using var response = await httpClient.SendAsync(
             request,
             HttpCompletionOption.ResponseHeadersRead,
             cancellationToken);
-        stopwatch.Stop();
 
         var requestId = GetRequestId(response);
         if (!response.IsSuccessStatusCode)
@@ -70,7 +86,7 @@ internal sealed class FoundryAvailabilityProbe(
                 $"{requestId ?? "unavailable"}.");
         }
 
-        return new ProbeResult(stopwatch.Elapsed, requestId, responseText);
+        return new ProbeRequestResult(requestId, responseText);
     }
 
     private static bool TryGetResponseText(
@@ -108,5 +124,8 @@ internal sealed class FoundryAvailabilityProbe(
 
 internal sealed record ProbeResult(
     TimeSpan Duration,
+    IReadOnlyList<ProbeRequestResult> Requests);
+
+internal sealed record ProbeRequestResult(
     string? RequestId,
     string ResponseText);
