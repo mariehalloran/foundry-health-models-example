@@ -434,8 +434,7 @@ az deployment group what-if \
     foundryResourceId="$foundry_resource_id" \
     foundryPlatformMinimumRequests=20 \
     foundryPlatformDegradedAvailabilityPercent=99 \
-    foundryPlatformUnhealthyAvailabilityPercent=95 \
-    actionGroupResourceId="$action_group_resource_id"
+    foundryPlatformUnhealthyAvailabilityPercent=95
 ```
 
 Apply only after reviewing the entity replacement:
@@ -451,8 +450,7 @@ az deployment group create \
     foundryResourceId="$foundry_resource_id" \
     foundryPlatformMinimumRequests=20 \
     foundryPlatformDegradedAvailabilityPercent=99 \
-    foundryPlatformUnhealthyAvailabilityPercent=95 \
-    actionGroupResourceId="$action_group_resource_id"
+    foundryPlatformUnhealthyAvailabilityPercent=95
 ```
 
 The Foundry Availability - Azure Metrics entity combines `AzureOpenAIAvailabilityRate` and `AzureOpenAIRequests` in a `BestOf` group. It stays Healthy below the minimum request volume and mirrors availability once the minimum is reached.
@@ -463,9 +461,9 @@ Deploy the observability template after the Foundry signal template. It creates 
 
 Foundry Availability - Application OTEL applies the same gate to availability derived from `foundry.server_errors` and `foundry.requests`.
 
-Diagnostics - Azure Metrics uses native low-sensitivity dynamic thresholds and propagates only to the suppressed Foundry Diagnostics parent, which owns the Sev3 alert policy.
+Diagnostics - Azure Metrics uses native low-sensitivity dynamic thresholds and propagates only to the suppressed Foundry Diagnostics parent, which has no alert policy.
 
-Newly configured dynamic signals can remain `Unknown` while Azure learns their normal behavior. A numeric value with no error means collection is working and the baseline isn't ready. A null value with no error means no sample was emitted in the window. An `error` field indicates an actual configuration, permission, query, or unsupported-metric problem. The Diagnostics parent ignores unknown children and is suppressed from root health, so only evaluated anomalies generate Sev3 alerts.
+Newly configured dynamic signals can remain `Unknown` while Azure learns their normal behavior. A numeric value with no error means collection is working and the baseline isn't ready. A null value with no error means no sample was emitted in the window. An `error` field indicates an actual configuration, permission, query, or unsupported-metric problem. The Diagnostics parent ignores unknown children, is suppressed from root health, and doesn't generate alerts.
 
 ```bash
 log_analytics_workspace_id="$(azd env get-value LOG_ANALYTICS_WORKSPACE_ID)"
@@ -506,7 +504,7 @@ az deployment group create \
     actionGroupResourceId="$action_group_resource_id"
 ```
 
-The resulting graph places Foundry Availability and suppressed Foundry Diagnostics under the root. Cosmos DB remains part of the application infrastructure but isn't represented in this Health Model.
+The resulting graph places Foundry Availability and suppressed Foundry Diagnostics under the `Foundry Workload` root, which has a 99% health objective. Cosmos DB remains part of the application infrastructure but isn't represented in this Health Model.
 
 Resource-group deployments are incremental. When upgrading a graph created by an earlier version of this example, remove the obsolete Cosmos DB relationship once:
 

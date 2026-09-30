@@ -21,7 +21,7 @@ param rootEntityName string = 'foundry'
 
 @description('Display name for the Health Model root entity.')
 @minLength(3)
-param rootEntityDisplayName string = 'Foundry Health Model Example'
+param rootEntityDisplayName string = 'Foundry Workload'
 
 @description('Full ARM resource ID of the Log Analytics workspace.')
 param logAnalyticsWorkspaceResourceId string
@@ -213,6 +213,7 @@ resource rootEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-prev
   properties: {
     displayName: rootEntityDisplayName
     impact: 'Standard'
+    healthObjective: 99
     canvasPosition: {
       x: 200
       y: 0
@@ -279,15 +280,7 @@ resource diagnosticsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-
       x: 600
       y: 180
     }
-    alerts: {
-      unhealthy: {
-        actionGroupIds: [
-          actionGroupResourceId
-        ]
-        description: 'Foundry diagnostics detected a significant anomaly.'
-        severity: 'Sev3'
-      }
-    }
+    alerts: {}
     signalGroups: {
       dependencies: {
         aggregationType: 'WorstOf'
@@ -445,6 +438,6 @@ resource diagnosticsMetricsRelationship 'Microsoft.CloudHealth/healthmodels/rela
   }
 }
 
-output configuredEntityCount int = 4
+output configuredEntityCount int = 5
 output configuredSignalCount int = 12
 output configuredRelationshipCount int = 5
