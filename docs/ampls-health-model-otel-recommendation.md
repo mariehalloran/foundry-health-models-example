@@ -244,26 +244,9 @@ It requires no custom application counters, metric export, diagnostic setting,
 or Log Analytics query for Foundry reliability. The Health Model identity needs
 `Monitoring Reader` on the Foundry resource or a containing scope.
 
-The reliability entity uses the `2026-09-01-preview` signal-aggregation
-contract. The request gate is intentionally **Unhealthy** when traffic reaches
-the configured minimum. A `BestOf` group then preserves the availability state
-only when the gate is open:
-
-| Five-minute request volume | Availability state | Group state |
-| --- | --- | --- |
-| Below the minimum | Any populated state | Healthy |
-| At or above the minimum | Healthy | Healthy |
-| At or above the minimum | Degraded | Degraded |
-| At or above the minimum | Unhealthy | Unhealthy |
-
-With the defaults, the gate opens at 20 requests, availability is Degraded at
-or below 99%, and availability is Unhealthy at or below 95%. Degraded
-reliability alerts at Sev2 and Unhealthy reliability alerts at Sev1.
-
-This relationship captures the expected correlation: if request volume remains
-stable while HTTP 5xx responses increase, availability falls and the group
-changes health. If errors increase only in proportion to traffic, availability
-remains stable.
+The entity combines both metrics in a `BestOf` group. Below 20 requests per
+five minutes it stays Healthy; once that minimum is reached, it mirrors
+availability (Degraded at 99% or lower and Unhealthy at 95% or lower).
 
 At zero traffic, both metrics can report `Unknown`. Idle intervals therefore
 don't create a threshold alert.

@@ -142,7 +142,6 @@ The deployment creates:
 - Standard Azure Static Web App hosting the separate frontend.
 - Static Web Apps linked backend that proxies `/api/*` to Container Apps.
 - Azure Container App and Container Apps environment.
-- Scheduled Container Apps Job that probes Foundry once per minute.
 - Azure Cosmos DB serverless account and conversation container.
 - A virtual network, private endpoints, and private DNS zones.
 - An application managed identity with scoped role assignments.
@@ -187,46 +186,6 @@ curl --fail "$app_url/api/history/$user_id"
 curl --fail --request DELETE "$app_url/api/history/$user_id"
 ```
 
-## Verify the scheduled Foundry probe
-
-The `probe` service deploys a scheduled Container Apps Job into the same private environment as the API. It runs every minute, uses a dedicated managed identity, sends the prompt `Reply OK.`, and allows at most 16 completion tokens.
-
-Inspect the deployed schedule:
-
-```bash
-resource_group="$(azd env get-value AZURE_RESOURCE_GROUP_NAME)"
-probe_job_name="$(azd env get-value SERVICE_PROBE_RESOURCE_NAME)"
-
-az containerapp job show \
-  --resource-group "$resource_group" \
-  --name "$probe_job_name" \
-  --query '{
-    trigger: properties.configuration.triggerType,
-    cron: properties.configuration.scheduleTriggerConfig.cronExpression,
-    timeout: properties.configuration.replicaTimeout,
-    retries: properties.configuration.replicaRetryLimit
-  }'
-```
-
-Confirm recent executions are succeeding:
-
-```bash
-az containerapp job execution list \
-  --resource-group "$resource_group" \
-  --name "$probe_job_name" \
-  --query '[0:10].{name:name,status:properties.status,start:properties.startTime,end:properties.endTime}' \
-  --output table
-
-az containerapp job logs show \
-  --resource-group "$resource_group" \
-  --name "$probe_job_name" \
-  --container probe \
-  --tail 20 \
-  --format text
-```
-
-Each scheduled execution makes one Foundry request with no automatic retry. The application timeout is 45 seconds and the job timeout is 55 seconds. Five probe requests per five-minute window remain below the default platform reliability gate of 20 requests, so probe traffic alone doesn't make `AzureOpenAIAvailabilityRate` health-affecting.
-
 ## Deploy application updates
 
 When only application code changed:
@@ -240,7 +199,6 @@ Deploy just one service when appropriate:
 ```bash
 azd deploy web
 azd deploy chat
-azd deploy probe
 ```
 
 When Bicep or multiple services changed:
@@ -496,22 +454,13 @@ az deployment group create \
     actionGroupResourceId="$action_group_resource_id"
 ```
 
-The Foundry Availability - Azure Metrics entity contains `AzureOpenAIAvailabilityRate` and `AzureOpenAIRequests`. Availability is never ungrouped: the minimum-request signal is intentionally Unhealthy when the gate is open, and a `BestOf` group preserves the availability state only when traffic is sufficient.
-
-| Five-minute requests | Availability | Group state |
-| --- | --- | --- |
-| Below minimum | Any populated value | Healthy |
-| At or above minimum | Healthy | Healthy |
-| At or above minimum | Degraded | Degraded |
-| At or above minimum | Unhealthy | Unhealthy |
-
-The one-minute synthetic probe keeps the path exercised and usually keeps request metrics populated, but its five requests per five-minute window remain below the default gate of 20. At zero traffic the platform metrics can be `Unknown` without generating a threshold alert.
+The Foundry Availability - Azure Metrics entity combines `AzureOpenAIAvailabilityRate` and `AzureOpenAIRequests` in a `BestOf` group. It stays Healthy below the minimum request volume and mirrors availability once the minimum is reached.
 
 ### Configure availability and diagnostics
 
 Deploy the observability template after the Foundry signal template. It creates a Foundry Availability branch with Azure Metrics and Application OTEL children and a suppressed Foundry Diagnostics branch containing the remaining Azure metrics.
 
-Foundry Availability - Application OTEL uses two KQL signals over a completed five-minute window: an availability percentage derived from `foundry.server_errors` and `foundry.requests`, and a request-count gate. A `BestOf` group combines them with the same 20-request, 99%, and 95% settings as the Azure Metrics pair.
+Foundry Availability - Application OTEL applies the same gate to availability derived from `foundry.server_errors` and `foundry.requests`.
 
 Diagnostics - Azure Metrics uses native low-sensitivity dynamic thresholds and propagates only to the suppressed Foundry Diagnostics parent, which owns the Sev3 alert policy.
 
@@ -620,7 +569,6 @@ done
 The default infrastructure uses:
 
 - Container Apps scale-to-zero with at most one replica.
-- A one-minute Container Apps Job probe with one request, no retries, and a 16-token completion cap.
 - Standard Static Web Apps, required for the linked Container Apps backend.
 - Cosmos DB serverless.
 - Basic Container Registry.
@@ -640,3 +588,45 @@ azd down --purge
 ```
 
 Review the confirmation carefully. This permanently deletes the environment's resource group and stored conversation data.
+
+## Verify the scheduled Foundry probe
+
+The `probe` service deploys a scheduled Container Apps Job into the private environment. It makes one 16-token request per minute with no retries, a 45-second application timeout, and a 55-second job timeout. Its five requests per five-minute window remain below the default availability gate of 20.
+
+Deploy only this service after probe code changes:
+
+```bash
+azd deploy probe
+```
+
+Inspect the schedule and recent executions:
+
+```bash
+resource_group="$(azd env get-value AZURE_RESOURCE_GROUP_NAME)"
+probe_job_name="$(azd env get-value SERVICE_PROBE_RESOURCE_NAME)"
+
+az containerapp job show \
+  --resource-group "$resource_group" \
+  --name "$probe_job_name" \
+  --query '{
+    trigger: properties.configuration.triggerType,
+    cron: properties.configuration.scheduleTriggerConfig.cronExpression,
+    timeout: properties.configuration.replicaTimeout,
+    retries: properties.configuration.replicaRetryLimit
+  }'
+
+az containerapp job execution list \
+  --resource-group "$resource_group" \
+  --name "$probe_job_name" \
+  --query '[0:10].{name:name,status:properties.status,start:properties.startTime,end:properties.endTime}' \
+  --output table
+
+az containerapp job logs show \
+  --resource-group "$resource_group" \
+  --name "$probe_job_name" \
+  --container probe \
+  --tail 20 \
+  --format text
+```
+
+The job incurs recurring Container Apps execution and model-token charges.
