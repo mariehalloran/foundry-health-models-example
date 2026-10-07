@@ -22,6 +22,10 @@ param actionGroupResourceId string
 @minValue(1)
 param minimumRequests int = 20
 
+@description('Minimum requests in five minutes before inference diagnostics can affect health.')
+@minValue(1)
+param diagnosticMinimumRequests int = 25
+
 @description('Availability percentage that degrades Foundry health.')
 @minValue(0)
 @maxValue(100)
@@ -96,6 +100,7 @@ module observability 'health-model-observability.bicep' = {
     )
     actionGroupResourceId: actionGroupResourceId
     authenticationSettingName: systemAssignedAuthentication.name
+    foundryDiagnosticMinimumRequests: diagnosticMinimumRequests
     otelReliabilityMinimumRequests: minimumRequests
     otelDegradedAvailabilityPercent: degradedAvailabilityPercent
     otelUnhealthyAvailabilityPercent: unhealthyAvailabilityPercent

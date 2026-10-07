@@ -23,13 +23,13 @@ The Application OTEL child is optional. A model that uses only Azure Metrics sti
 
 **Full catalog:** The [Azure OpenAI monitoring data reference](https://learn.microsoft.com/azure/foundry/openai/monitor-openai-reference#metrics) lists every available platform metric, including its REST API name, dimensions, supported aggregation, time grain, and diagnostic settings export support. The catalog covers multiple models, deployment types, and features, so not every metric is emitted by every Foundry resource.
 
-The Azure Metrics baseline uses 12 signals. The optional OTEL availability child adds two more, for 14 signals in the reference deployment:
+The Azure Metrics baseline uses 13 signals. The optional OTEL availability child adds two more, for 15 signals in the reference deployment:
 
 | Entity | Technical signals | Purpose | Rollup |
 | --- | --- | --- | --- |
 | [Foundry Availability - Azure Metrics](infra/health-model-foundry-signals.bicep) | `AzureOpenAIAvailabilityRate`, `AzureOpenAIRequests` | Service-side availability gated by request volume | Foundry Availability, Sev3/Sev2 |
 | [Foundry Availability - Application OTEL](infra/health-model-observability.bicep) (optional) | `foundry.availability_rate`, `foundry.requests` | Enriches service metrics with workload-observed availability using the same gate | Foundry Availability, Sev3/Sev2 |
-| [Diagnostics - Azure Metrics](infra/health-model-observability.bicep) | `TokenTransaction`, `AzureOpenAINormalizedTBTInMS`, `GeneratedTokens`, `AzureOpenAITTLTInMS`, `AzureOpenAINormalizedTTFTInMS`, `ProcessedPromptTokens`, `RAIRejectedRequests`, `RAIHarmfulRequests`, `RAISystemEvent`, `RAITotalRequests` | Remaining usable platform anomaly signals | Foundry Diagnostics, suppressed, no alerts |
+| [Diagnostics - Azure Metrics](infra/health-model-observability.bicep) | `TokenTransaction`, `AzureOpenAINormalizedTBTInMS`, `GeneratedTokens`, `AzureOpenAITTLTInMS`, `AzureOpenAINormalizedTTFTInMS`, `ProcessedPromptTokens`, `RAIRejectedRequests`, `RAIHarmfulRequests`, `RAISystemEvent`, `RAITotalRequests`, plus an `AzureOpenAIRequests` traffic gate | Remaining usable platform anomaly signals, with inference diagnostics gated by request volume | Foundry Diagnostics, suppressed, no alerts |
 
 ### Recommended availability signal
 
@@ -51,8 +51,8 @@ The Azure Metrics signals and `BestOf` group are defined in [`infra/health-model
 | --- | --- | --- |
 | `AzureOpenAIAvailabilityRate` + `AzureOpenAIRequests` | Availability supplies the outcome, while request volume supplies its sample size. Together they distinguish a noisy percentage based on a few calls from a sustained reliability problem. | This is the clearest service-side reliability outcome, so it can affect availability and trigger Sev3/Sev2. |
 | `foundry.requests` + `foundry.server_errors` (optional) | These counters reproduce the same request/HTTP 5xx calculation at the workload's logical-operation boundary. | Provides an alternative telemetry path that can enrich the service-side view. |
-| Latency: `AzureOpenAINormalizedTTFTInMS`, `AzureOpenAINormalizedTBTInMS`, `AzureOpenAITTLTInMS` | Together they cover initial responsiveness, token-generation cadence, and completion time. Each captures a different part of perceived model latency. | Expected latency varies with model, streaming mode, prompt size, and generated output, so anomalies are diagnostic rather than direct availability failures. |
-| Tokens: `ProcessedPromptTokens`, `GeneratedTokens`, `TokenTransaction` | Input, output, and total inference-token volume explain workload shape, usage, and cost. They also provide the context Microsoft recommends pairing with latency: slower responses accompanied by more tokens can be expected behavior. | Token volume is workload-dependent, so dynamic anomalies remain suppressed diagnostics. |
+| Latency: `AzureOpenAINormalizedTTFTInMS`, `AzureOpenAINormalizedTBTInMS`, `AzureOpenAITTLTInMS` | Together they cover initial responsiveness, token-generation cadence, and completion time. Each captures a different part of perceived model latency. | Expected latency varies with model, streaming mode, prompt size, and generated output, so anomalies are diagnostic rather than direct availability failures. Each signal is paired with the diagnostic request-volume gate. |
+| Tokens: `ProcessedPromptTokens`, `GeneratedTokens`, `TokenTransaction` | Input, output, and total inference-token volume explain workload shape, usage, and cost. They also provide the context Microsoft recommends pairing with latency: slower responses accompanied by more tokens can be expected behavior. | Token volume is workload-dependent, so dynamic anomalies remain suppressed diagnostics. Each signal is paired with the diagnostic request-volume gate. |
 | Content safety: `RAIRejectedRequests`, `RAIHarmfulRequests`, `RAISystemEvent`, `RAITotalRequests` | These show blocked volume, detected harmful content, safety-system events, and the total volume checked. Together they provide context for whether a change is isolated or proportional to traffic. | A blocked request usually means a guardrail worked correctly, not that Foundry is unavailable, so these signals never affect root health. |
 
 ### Azure Metrics are the baseline; OTEL is optional enrichment
@@ -74,17 +74,17 @@ For private OTEL ingestion and Health Model query access, see the [AMPLS recomme
 
 ### Diagnostics and dynamic thresholds
 
-Diagnostics use low-sensitivity dynamic thresholds to identify unusual behavior rather than fixed service-level failures. They require representative history and can remain in a learning state for several days.
+Diagnostics use low-sensitivity dynamic thresholds to identify unusual behavior rather than fixed service-level failures. The six inference diagnostics share a 25-request `AzureOpenAIRequests` gate. Below that volume, each `BestOf` group stays Healthy instead of treating sparse or missing traffic as an anomaly. At 25 or more requests, the group follows the dynamic signal.
 
 The diagnostic metric signals and dynamic-threshold rules are defined in [`infra/health-model-observability.bicep`](infra/health-model-observability.bicep).
 
 | Signal status | Meaning |
 | --- | --- |
-| Numeric value, `Unknown`, and no error | The dynamic threshold is still learning that metric series |
+| Numeric value and `Healthy` or `Unhealthy` during warm-up | Azure is using in-place statistical evaluation until enough history is available for the learned baseline |
 | No value, `Unknown`, and no error | The metric produced no sample in the evaluation window or isn't emitted by that deployment |
 | `Unknown` with an error | The metric name, query, permissions, or data source configuration failed |
 
-Dynamic thresholds generally need at least three days and 30 samples before they can classify a series, with longer history required for daily or weekly seasonality. Because Diagnostics is suppressed, ignores unknown children, and has no alert policy, its states remain investigation context only.
+Allow several days of representative traffic before interpreting a new dynamic signal's state. Warm-up doesn't guarantee an `Unknown` state because Health Models temporarily evaluate the available samples statistically. Because Diagnostics is suppressed, ignores unknown children, and has no alert policy, its states remain investigation context only.
 
 ## Health Model templates
 

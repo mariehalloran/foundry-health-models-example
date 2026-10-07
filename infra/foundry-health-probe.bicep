@@ -93,7 +93,8 @@ resource foundryHealthProbeJob 'Microsoft.App/jobs@2025-01-01' = {
     workloadProfileName: 'Consumption'
     configuration: {
       triggerType: 'Schedule'
-      replicaTimeout: 55
+      // The replica timeout includes scheduling, image pull, and container startup.
+      replicaTimeout: 120
       replicaRetryLimit: 0
       scheduleTriggerConfig: {
         cronExpression: '* * * * *'

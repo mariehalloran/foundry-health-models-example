@@ -461,9 +461,9 @@ Deploy the observability template after the Foundry signal template. It creates 
 
 Foundry Availability - Application OTEL applies the same gate to availability derived from `foundry.server_errors` and `foundry.requests`.
 
-Diagnostics - Azure Metrics uses native low-sensitivity dynamic thresholds and propagates only to the suppressed Foundry Diagnostics parent, which has no alert policy.
+Diagnostics - Azure Metrics uses native low-sensitivity dynamic thresholds and propagates only to the suppressed Foundry Diagnostics parent, which has no alert policy. The six inference diagnostics share a 25-request `AzureOpenAIRequests` `BestOf` gate so sparse or missing traffic doesn't make those groups unhealthy.
 
-Newly configured dynamic signals can remain `Unknown` while Azure learns their normal behavior. A numeric value with no error means collection is working and the baseline isn't ready. A null value with no error means no sample was emitted in the window. An `error` field indicates an actual configuration, permission, query, or unsupported-metric problem. The Diagnostics parent ignores unknown children, is suppressed from root health, and doesn't generate alerts.
+During dynamic-threshold warm-up, Azure uses in-place statistical evaluation until enough history is available for the learned baseline, so a numeric value can be Healthy or Unhealthy for these signals. A null value with no error means no sample was emitted in the window. An `error` field indicates an actual configuration, permission, query, or unsupported-metric problem. The Diagnostics parent ignores unknown children, is suppressed from root health, and doesn't generate alerts.
 
 ```bash
 log_analytics_workspace_id="$(azd env get-value LOG_ANALYTICS_WORKSPACE_ID)"
@@ -480,6 +480,7 @@ az deployment group what-if \
     foundryEntityName="$foundry_entity_name" \
     foundryResourceId="$foundry_resource_id" \
     logAnalyticsWorkspaceResourceId="$log_analytics_workspace_id" \
+    foundryDiagnosticMinimumRequests=25 \
     otelReliabilityMinimumRequests=20 \
     otelDegradedAvailabilityPercent=99 \
     otelUnhealthyAvailabilityPercent=95 \
@@ -498,6 +499,7 @@ az deployment group create \
     foundryEntityName="$foundry_entity_name" \
     foundryResourceId="$foundry_resource_id" \
     logAnalyticsWorkspaceResourceId="$log_analytics_workspace_id" \
+    foundryDiagnosticMinimumRequests=25 \
     otelReliabilityMinimumRequests=20 \
     otelDegradedAvailabilityPercent=99 \
     otelUnhealthyAvailabilityPercent=95 \
@@ -590,7 +592,7 @@ Review the confirmation carefully. This permanently deletes the environment's re
 
 ## Verify the scheduled Foundry probe
 
-The `probe` service deploys a scheduled Container Apps Job into the private environment. Each one-minute execution makes five concurrent requests with a 16-token completion cap, no retries, a 45-second application timeout, and a 55-second job timeout. The model deployment defaults to 10 RPM, leaving approximately 5 RPM for application traffic.
+The `probe` service deploys a scheduled Container Apps Job into the private environment. Each one-minute execution makes five concurrent requests with a 16-token completion cap, no retries, a 45-second application timeout, and a 120-second job timeout. The longer job timeout includes Container Apps scheduling, image pull, and startup time; the application timeout still bounds the Foundry request work. The model deployment defaults to 10 RPM, leaving approximately 5 RPM for application traffic.
 
 The probe contributes approximately 25 requests per five-minute window and intentionally opens the platform availability gate of 20. It doesn't increment the Application OTEL counters because it runs in a separate process. At the observed token mix, its model requests cost about $47.65 per 30-day month, plus Container Apps execution and logging costs.
 

@@ -33,6 +33,10 @@ param actionGroupResourceId string
 @description('Existing Health Model authentication setting.')
 param authenticationSettingName string = 'systemassigned'
 
+@description('Minimum Foundry requests in five minutes before inference diagnostics can affect health.')
+@minValue(1)
+param foundryDiagnosticMinimumRequests int = 25
+
 @description('Minimum OTEL Foundry requests in five completed minutes before availability can affect health.')
 @minValue(1)
 param otelReliabilityMinimumRequests int = 20
@@ -55,7 +59,7 @@ var foundryDiagnosticEvaluationRules = {
     lookBackWindow: 'PT1H'
   }
 }
-var foundryDiagnosticSignals = [
+var foundryDynamicDiagnosticSignals = [
   {
     name: 'foundry-diagnostic-token-transaction'
     displayName: 'TokenTransaction'
@@ -177,6 +181,70 @@ var foundryDiagnosticSignals = [
     evaluationRules: foundryDiagnosticEvaluationRules
   }
 ]
+var foundryDiagnosticTrafficGateSignalName = 'foundry-diagnostic-request-volume-gate'
+var foundryDiagnosticSignals = concat(foundryDynamicDiagnosticSignals, [
+  {
+    name: foundryDiagnosticTrafficGateSignalName
+    displayName: 'AzureOpenAIRequests diagnostic traffic gate'
+    signalKind: 'AzureResourceMetric'
+    metricNamespace: foundryMetricNamespace
+    metricName: 'AzureOpenAIRequests'
+    aggregationType: 'Total'
+    dataUnit: 'Count'
+    timeGrain: 'PT5M'
+    refreshInterval: 'PT5M'
+    evaluationRules: {
+      unhealthyRule: {
+        operator: 'GreaterThanOrEqual'
+        threshold: foundryDiagnosticMinimumRequests
+      }
+    }
+  }
+])
+var foundryDiagnosticGatedSignals = [
+  {
+    name: 'foundry-diagnostic-token-transaction'
+    groupName: 'foundry-diagnostic-token-transaction-gate'
+    displayName: 'TokenTransaction with minimum traffic'
+  }
+  {
+    name: 'foundry-diagnostic-time-between-tokens'
+    groupName: 'foundry-diagnostic-time-between-tokens-gate'
+    displayName: 'AzureOpenAINormalizedTBTInMS with minimum traffic'
+  }
+  {
+    name: 'foundry-diagnostic-generated-tokens'
+    groupName: 'foundry-diagnostic-generated-tokens-gate'
+    displayName: 'GeneratedTokens with minimum traffic'
+  }
+  {
+    name: 'foundry-diagnostic-time-to-last-byte'
+    groupName: 'foundry-diagnostic-time-to-last-byte-gate'
+    displayName: 'AzureOpenAITTLTInMS with minimum traffic'
+  }
+  {
+    name: 'foundry-diagnostic-normalized-first-byte'
+    groupName: 'foundry-diagnostic-normalized-first-byte-gate'
+    displayName: 'AzureOpenAINormalizedTTFTInMS with minimum traffic'
+  }
+  {
+    name: 'foundry-diagnostic-prompt-tokens'
+    groupName: 'foundry-diagnostic-prompt-tokens-gate'
+    displayName: 'ProcessedPromptTokens with minimum traffic'
+  }
+]
+var foundryDiagnosticSignalAggregationGroups = [
+  for signal in foundryDiagnosticGatedSignals: {
+    name: signal.groupName
+    displayName: signal.displayName
+    aggregationType: 'BestOf'
+    ignoreUnknown: true
+    members: [
+      signal.name
+      foundryDiagnosticTrafficGateSignalName
+    ]
+  }
+]
 var otelAvailabilitySignalName = 'otel-foundry-availability'
 var otelVolumeGateSignalName = 'otel-foundry-volume-gate'
 var otelAvailabilityQuery = '''
@@ -290,7 +358,9 @@ resource diagnosticsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-
   }
 }
 
-resource foundryDiagnosticsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-preview' = {
+// Signal aggregation groups require 2026-09-01-preview, which can be newer than the bundled Bicep type index.
+#disable-next-line BCP081
+resource foundryDiagnosticsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-09-01-preview' = {
   name: foundryDiagnosticsEntityName
   parent: healthModel
   properties: {
@@ -304,6 +374,7 @@ resource foundryDiagnosticsEntity 'Microsoft.CloudHealth/healthmodels/entities@2
       x: 600
       y: 420
     }
+    signalAggregationGroups: foundryDiagnosticSignalAggregationGroups
     signalGroups: {
       azureResource: {
         authenticationSetting: authenticationSettingName
@@ -439,5 +510,5 @@ resource diagnosticsMetricsRelationship 'Microsoft.CloudHealth/healthmodels/rela
 }
 
 output configuredEntityCount int = 5
-output configuredSignalCount int = 12
+output configuredSignalCount int = length(foundryDiagnosticSignals) + 2
 output configuredRelationshipCount int = 5
