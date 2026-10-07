@@ -56,7 +56,6 @@ var foundryDiagnosticEvaluationRules = {
   unhealthyRule: {
     operator: 'Dynamic'
     sensitivity: 'Low'
-    lookBackWindow: 'PT1H'
   }
 }
 var foundryDynamicDiagnosticSignals = [
