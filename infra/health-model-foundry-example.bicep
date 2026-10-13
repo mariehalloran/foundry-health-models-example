@@ -10,9 +10,17 @@ param healthModelLocation string = 'centralus'
 @description('Full ARM resource ID of the Microsoft.CognitiveServices account.')
 param foundryResourceId string
 
-@description('Name of the Log Analytics workspace used by the Application OTEL signals.')
+@description('Name of the Foundry model deployment represented by the Health Model.')
+@minLength(1)
+param modelDeploymentName string
+
+@description('Name of the Log Analytics workspace used by OTEL and probe execution signals.')
 @minLength(3)
 param logAnalyticsWorkspaceName string
+
+@description('Name of the scheduled Container Apps Job that runs the synthetic Foundry probe.')
+@minLength(1)
+param probeJobName string
 
 @description('Full ARM resource ID of the Action Group that receives Health Model alerts.')
 @minLength(1)
@@ -24,7 +32,7 @@ param minimumRequests int = 20
 
 @description('Minimum requests in five minutes before inference diagnostics can affect health.')
 @minValue(1)
-param diagnosticMinimumRequests int = 25
+param diagnosticMinimumRequests int = 20
 
 @description('Availability percentage that degrades Foundry health.')
 @minValue(0)
@@ -76,6 +84,7 @@ module foundrySignals 'health-model-foundry-signals.bicep' = {
     healthModelName: healthModel.name
     foundryEntityName: foundryAvailabilityEntityName
     foundryResourceId: foundryResourceId
+    modelDeploymentName: modelDeploymentName
     authenticationSettingName: systemAssignedAuthentication.name
     foundryPlatformMinimumRequests: minimumRequests
     foundryPlatformDegradedAvailabilityPercent: degradedAvailabilityPercent
@@ -92,6 +101,8 @@ module observability 'health-model-observability.bicep' = {
     healthModelName: healthModel.name
     foundryEntityName: foundryAvailabilityEntityName
     foundryResourceId: foundryResourceId
+    modelDeploymentName: modelDeploymentName
+    probeJobName: probeJobName
     rootEntityName: toLower(healthModel.name)
     rootEntityDisplayName: 'Foundry Workload'
     logAnalyticsWorkspaceResourceId: resourceId(

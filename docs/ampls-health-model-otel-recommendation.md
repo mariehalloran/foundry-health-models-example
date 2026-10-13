@@ -223,6 +223,7 @@ This repository queries:
 
 - `foundry.requests`
 - `foundry.server_errors`
+- `ContainerAppSystemLogs_CL` for scheduled probe job execution failures
 
 The queries are defined in
 [`health-model-observability.bicep`](../infra/health-model-observability.bicep).
@@ -244,9 +245,16 @@ It requires no custom application counters, metric export, diagnostic setting,
 or Log Analytics query for Foundry reliability. The Health Model identity needs
 `Monitoring Reader` on the Foundry resource or a containing scope.
 
-The entity combines both metrics in a `BestOf` group. Below 20 requests per
-five minutes it stays Healthy; once that minimum is reached, it mirrors
-availability (Degraded at 99% or lower and Unhealthy at 95% or lower).
+Both metrics use the `ModelDeploymentName` dimension so unrelated deployments
+in the same account don't affect this model. The entity combines them in a
+`BestOf` group. Below 20 requests per five minutes it stays Healthy; once that
+minimum is reached, it mirrors availability (Degraded at 99% or lower and
+Unhealthy at 95% or lower).
+
+The sample expects about 25 synthetic requests per rolling five minutes and
+sets the gate to 20. A gate should sit below expected minimum traffic rather
+than equal the average so a missed or delayed probe execution doesn't keep the
+gate closed. Production values must be tuned from actual traffic.
 
 At zero traffic, both metrics can report `Unknown`. Idle intervals therefore
 don't create a threshold alert.
@@ -317,7 +325,8 @@ In the Health Model entity:
 2. Select an authentication setting that uses the authorized Health Model
    identity.
 3. Add a Log Analytics signal.
-4. Use a KQL query against `AppMetrics`.
+4. Use a KQL query against the relevant workspace table, such as `AppMetrics`
+   or `ContainerAppSystemLogs_CL`.
 5. Make the final query result exactly one record with one numeric value.
 6. Configure the refresh interval, query time range, and degraded and unhealthy
    thresholds.
@@ -325,6 +334,14 @@ In the Health Model entity:
 Queries should explicitly handle an empty evaluation window. Returning zero
 when the absence of matching records means no observed failures prevents an
 idle workload from becoming `Unknown`.
+
+The probe execution diagnostic follows this pattern over
+`ContainerAppSystemLogs_CL`. It queries a completed five-minute window delayed
+by two minutes, filters to the configured Container Apps Job, de-duplicates
+terminal failure events by execution, and returns zero when none are found.
+`BackoffLimitExceeded`, explicit failed/deadline events, and nonzero container
+termination are treated as failures. The signal is a static diagnostic under
+the suppressed Diagnostics branch, not a Foundry availability outcome.
 
 ## Managed Prometheus alternative
 
@@ -381,8 +398,12 @@ policy.
 - [ ] The Health Model identity has workspace-level `Monitoring Reader`.
 - [ ] For direct Foundry platform signals, the Health Model identity has `Monitoring Reader`
       on the Foundry resource or containing scope.
+- [ ] Foundry account metrics are filtered to the intended
+      `ModelDeploymentName`.
 - [ ] The selected Health Model authentication setting uses that identity.
 - [ ] The KQL or PromQL query returns one numeric result.
+- [ ] The probe job failure query returns zero for a completed window with no
+      terminal failures and counts a failed execution only once.
 - [ ] Health Model signals continue refreshing with query access open.
 - [ ] An unauthorized identity cannot query the workspace.
 - [ ] A split health-signal workspace contains only approved metrics and
@@ -402,11 +423,13 @@ policy.
 | Signals fail only when public query is disabled | Evaluator has no private query route | Restore query access or use external evaluation |
 | Health workspace query returns no rows | Telemetry is routed only to the private workspace | Collector fan-out or projection worker configuration |
 | Sensitive data appears in the health workspace | Routing filter is too broad | Collector processors, metric allowlist, exported attributes |
-| Signal has a value but remains `Unknown` | A dynamic threshold is still learning the metric series | Allow at least three days and 30 samples; confirm the status has no error |
+| Dynamic latency signal has an unexpected warm-up state | Azure is statistically evaluating limited history before the learned baseline is ready | Allow several days of representative traffic and confirm the status has no error |
 | Signal has no value and remains `Unknown` | No sample was emitted in the evaluation window | Confirm traffic, deployment applicability, metric availability, and time grain |
 | Signal is `Unknown` with an error | Query, metric, RBAC, or data-source configuration failed | Inspect the signal status error and correct the named failure |
 | Platform reliability stays `Unknown` during active traffic | Platform metrics aren't readable or populated | Foundry `Monitoring Reader`, metric availability, request volume, API version |
 | Platform reliability changes under low traffic | Minimum-request gate is too low | Increase `foundryPlatformMinimumRequests` |
+| Unrelated Foundry traffic changes a signal | The metric isn't deployment-scoped | Confirm `dimension` is `ModelDeploymentName` and `dimensionFilter` matches the configured deployment |
+| Probe diagnostic is Unhealthy while Foundry metrics look normal | The scheduled job failed before or around the model call | Inspect Container Apps Job execution history and `ContainerAppSystemLogs_CL` for the configured job |
 | PromQL query fails privately | Azure Monitor workspace query endpoint is missing | `prometheusMetrics` private endpoint and regional private DNS zone |
 
 ## References

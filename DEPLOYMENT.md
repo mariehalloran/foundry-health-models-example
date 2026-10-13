@@ -383,7 +383,7 @@ The deployment scope is the resource group whose metrics the health model must r
 
 ### Configure the Foundry entity signals
 
-Review the [available Azure Health Model signals](README.md#available-azure-health-model-signals) before applying the signal template. The signal template performs a full update of the existing Foundry entity, so signals not declared in the template are removed. It doesn't create any additional Health Model entities or relationships.
+Review the [available Azure Health Model signals](README.md#signals) before applying the signal template. The signal template performs a full update of the existing Foundry entity, so signals not declared in the template are removed. It doesn't create any additional Health Model entities or relationships.
 
 Discover the required values without hardcoding resource IDs:
 
@@ -403,6 +403,8 @@ foundry_resource_id="$(
     --query '[0].id' \
     --output tsv
 )"
+model_deployment_name="$(azd env get-value AZURE_OPENAI_DEPLOYMENT)"
+probe_job_name="$(azd env get-value SERVICE_PROBE_RESOURCE_NAME)"
 health_model_resource_id="$(
   az resource show \
     --resource-group "$resource_group" \
@@ -432,6 +434,7 @@ az deployment group what-if \
     healthModelName="$health_model_name" \
     foundryEntityName="$foundry_entity_name" \
     foundryResourceId="$foundry_resource_id" \
+    modelDeploymentName="$model_deployment_name" \
     foundryPlatformMinimumRequests=20 \
     foundryPlatformDegradedAvailabilityPercent=99 \
     foundryPlatformUnhealthyAvailabilityPercent=95
@@ -448,20 +451,27 @@ az deployment group create \
     healthModelName="$health_model_name" \
     foundryEntityName="$foundry_entity_name" \
     foundryResourceId="$foundry_resource_id" \
+    modelDeploymentName="$model_deployment_name" \
     foundryPlatformMinimumRequests=20 \
     foundryPlatformDegradedAvailabilityPercent=99 \
     foundryPlatformUnhealthyAvailabilityPercent=95
 ```
 
-The Foundry Availability - Azure Metrics entity combines `AzureOpenAIAvailabilityRate` and `AzureOpenAIRequests` in a `BestOf` group. It stays Healthy below the minimum request volume and mirrors availability once the minimum is reached.
+The Foundry Availability - Azure Metrics entity combines `AzureOpenAIAvailabilityRate` and `AzureOpenAIRequests` in a `BestOf` group. Both signals filter the account metric with `dimension: 'ModelDeploymentName'` and the configured deployment name. The group stays Healthy below the minimum request volume and mirrors availability once the minimum is reached.
+
+Keep the gate below expected minimum traffic rather than equal to the average. The sample normally generates 25 synthetic requests per rolling five minutes and uses 20 as headroom for one missed or delayed probe execution. Tune production gates from observed traffic, scheduler behavior, and metric ingestion delay rather than copying the sample value.
 
 ### Configure availability and diagnostics
 
-Deploy the observability template after the Foundry signal template. It creates a Foundry Availability branch with Azure Metrics and Application OTEL children and a suppressed Foundry Diagnostics branch containing the remaining Azure metrics.
+Deploy the observability template after the Foundry signal template. It creates a Foundry Availability branch with Azure Metrics and Application OTEL children and a suppressed Foundry Diagnostics branch containing deployment-scoped latency metrics plus a separate synthetic probe job execution signal.
 
 Foundry Availability - Application OTEL applies the same gate to availability derived from `foundry.server_errors` and `foundry.requests`.
 
-Diagnostics - Azure Metrics uses native low-sensitivity dynamic thresholds and propagates only to the suppressed Foundry Diagnostics parent, which has no alert policy. The six inference diagnostics share a 25-request `AzureOpenAIRequests` `BestOf` gate so sparse or missing traffic doesn't make those groups unhealthy.
+Diagnostics - Azure Metrics uses native low-sensitivity dynamic thresholds only for `AzureOpenAINormalizedTBTInMS`, `AzureOpenAITTLTInMS`, and `AzureOpenAINormalizedTTFTInMS`. These metrics and their `AzureOpenAIRequests` gate are filtered to `ModelDeploymentName`. The gate measures five minutes, refreshes every minute, and defaults to 20 requests so sparse traffic doesn't make a latency group unhealthy while the normal 25 synthetic requests per window still leave headroom.
+
+Token totals (`ProcessedPromptTokens`, `GeneratedTokens`, and `TokenTransaction`) and RAI volume/count metrics remain useful in workbooks and charts for workload, cost, and safety context. They aren't Health Model state signals because delayed probe runs change volume totals and zero-volume RAI windows frequently remain `Unknown`.
+
+Diagnostics - Synthetic Probe Job queries `ContainerAppSystemLogs_CL` in the configured workspace over a completed five-minute window delayed by two minutes. It filters to the exported probe job name, counts each failed execution once, returns zero when there are no failures, and becomes Unhealthy for `BackoffLimitExceeded`, explicit failed/deadline events, or nonzero container termination. This child remains under the suppressed Diagnostics branch and has no alerts.
 
 During dynamic-threshold warm-up, Azure uses in-place statistical evaluation until enough history is available for the learned baseline, so a numeric value can be Healthy or Unhealthy for these signals. A null value with no error means no sample was emitted in the window. An `error` field indicates an actual configuration, permission, query, or unsupported-metric problem. The Diagnostics parent ignores unknown children, is suppressed from root health, and doesn't generate alerts.
 
@@ -479,8 +489,10 @@ az deployment group what-if \
     healthModelName="$health_model_name" \
     foundryEntityName="$foundry_entity_name" \
     foundryResourceId="$foundry_resource_id" \
+    modelDeploymentName="$model_deployment_name" \
+    probeJobName="$probe_job_name" \
     logAnalyticsWorkspaceResourceId="$log_analytics_workspace_id" \
-    foundryDiagnosticMinimumRequests=25 \
+    foundryDiagnosticMinimumRequests=20 \
     otelReliabilityMinimumRequests=20 \
     otelDegradedAvailabilityPercent=99 \
     otelUnhealthyAvailabilityPercent=95 \
@@ -498,15 +510,17 @@ az deployment group create \
     healthModelName="$health_model_name" \
     foundryEntityName="$foundry_entity_name" \
     foundryResourceId="$foundry_resource_id" \
+    modelDeploymentName="$model_deployment_name" \
+    probeJobName="$probe_job_name" \
     logAnalyticsWorkspaceResourceId="$log_analytics_workspace_id" \
-    foundryDiagnosticMinimumRequests=25 \
+    foundryDiagnosticMinimumRequests=20 \
     otelReliabilityMinimumRequests=20 \
     otelDegradedAvailabilityPercent=99 \
     otelUnhealthyAvailabilityPercent=95 \
     actionGroupResourceId="$action_group_resource_id"
 ```
 
-The resulting graph places Foundry Availability and suppressed Foundry Diagnostics under the `Foundry Workload` root, which has a 99% health objective. Cosmos DB remains part of the application infrastructure but isn't represented in this Health Model.
+The resulting graph places Foundry Availability and suppressed Foundry Diagnostics under the `Foundry Workload` root, which has a 99% health objective. Only the Availability branch affects root health or alerts; latency and probe execution diagnostics remain investigation context. Cosmos DB remains part of the application infrastructure but isn't represented in this Health Model.
 
 Resource-group deployments are incremental. When upgrading a graph created by an earlier version of this example, remove the obsolete Cosmos DB relationship once:
 
@@ -594,7 +608,7 @@ Review the confirmation carefully. This permanently deletes the environment's re
 
 The `probe` service deploys a scheduled Container Apps Job into the private environment. Each one-minute execution makes five concurrent requests with a 16-token completion cap, no retries, a 45-second application timeout, and a 120-second job timeout. The longer job timeout includes Container Apps scheduling, image pull, and startup time; the application timeout still bounds the Foundry request work. The model deployment defaults to 10 RPM, leaving approximately 5 RPM for application traffic.
 
-The probe contributes approximately 25 requests per five-minute window and intentionally opens the platform availability gate of 20. It doesn't increment the Application OTEL counters because it runs in a separate process. At the observed token mix, its model requests cost about $47.65 per 30-day month, plus Container Apps execution and logging costs.
+The probe contributes approximately 25 requests per five-minute window and intentionally opens the platform availability and latency-diagnostic gates of 20. It doesn't increment the Application OTEL counters because it runs in a separate process. The Health Model also uses this exported job name to query `ContainerAppSystemLogs_CL` for terminal execution failures under the suppressed Diagnostics branch. At the observed token mix, its model requests cost about $47.65 per 30-day month, plus Container Apps execution and logging costs.
 
 Deploy only this service after probe code changes:
 

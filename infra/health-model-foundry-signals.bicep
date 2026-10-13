@@ -11,6 +11,10 @@ param foundryEntityName string
 @description('Full ARM resource ID of the Microsoft.CognitiveServices account.')
 param foundryResourceId string
 
+@description('Name of the Foundry model deployment represented by these metrics.')
+@minLength(1)
+param modelDeploymentName string
+
 @description('Existing Health Model authentication setting used by the entities.')
 param authenticationSettingName string = 'systemassigned'
 
@@ -41,6 +45,8 @@ var foundryPlatformReliabilitySignals = [
     signalKind: 'AzureResourceMetric'
     metricNamespace: foundryMetricNamespace
     metricName: 'AzureOpenAIAvailabilityRate'
+    dimension: 'ModelDeploymentName'
+    dimensionFilter: modelDeploymentName
     aggregationType: 'Average'
     dataUnit: 'Percent'
     timeGrain: 'PT5M'
@@ -62,6 +68,8 @@ var foundryPlatformReliabilitySignals = [
     signalKind: 'AzureResourceMetric'
     metricNamespace: foundryMetricNamespace
     metricName: 'AzureOpenAIRequests'
+    dimension: 'ModelDeploymentName'
+    dimensionFilter: modelDeploymentName
     aggregationType: 'Total'
     dataUnit: 'Count'
     timeGrain: 'PT5M'

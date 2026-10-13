@@ -11,6 +11,10 @@ param foundryEntityName string
 @description('Full ARM resource ID of the Microsoft.CognitiveServices account.')
 param foundryResourceId string
 
+@description('Name of the Foundry model deployment represented by Azure resource metrics.')
+@minLength(1)
+param modelDeploymentName string
+
 @description('Stable resource name for the Foundry diagnostics metrics entity.')
 @minLength(3)
 param foundryDiagnosticsEntityName string = 'foundry-diagnostics'
@@ -26,6 +30,10 @@ param rootEntityDisplayName string = 'Foundry Workload'
 @description('Full ARM resource ID of the Log Analytics workspace.')
 param logAnalyticsWorkspaceResourceId string
 
+@description('Name of the scheduled Container Apps Job that runs the synthetic Foundry probe.')
+@minLength(1)
+param probeJobName string
+
 @description('Action group that receives Health Model alerts.')
 @minLength(1)
 param actionGroupResourceId string
@@ -35,7 +43,7 @@ param authenticationSettingName string = 'systemassigned'
 
 @description('Minimum Foundry requests in five minutes before inference diagnostics can affect health.')
 @minValue(1)
-param foundryDiagnosticMinimumRequests int = 25
+param foundryDiagnosticMinimumRequests int = 20
 
 @description('Minimum OTEL Foundry requests in five completed minutes before availability can affect health.')
 @minValue(1)
@@ -60,37 +68,15 @@ var foundryDiagnosticEvaluationRules = {
 }
 var foundryDynamicDiagnosticSignals = [
   {
-    name: 'foundry-diagnostic-token-transaction'
-    displayName: 'TokenTransaction'
-    signalKind: 'AzureResourceMetric'
-    metricNamespace: foundryMetricNamespace
-    metricName: 'TokenTransaction'
-    aggregationType: 'Total'
-    dataUnit: 'Count'
-    timeGrain: 'PT5M'
-    refreshInterval: 'PT5M'
-    evaluationRules: foundryDiagnosticEvaluationRules
-  }
-  {
     name: 'foundry-diagnostic-time-between-tokens'
     displayName: 'AzureOpenAINormalizedTBTInMS'
     signalKind: 'AzureResourceMetric'
     metricNamespace: foundryMetricNamespace
     metricName: 'AzureOpenAINormalizedTBTInMS'
+    dimension: 'ModelDeploymentName'
+    dimensionFilter: modelDeploymentName
     aggregationType: 'Average'
     dataUnit: 'MilliSeconds'
-    timeGrain: 'PT5M'
-    refreshInterval: 'PT5M'
-    evaluationRules: foundryDiagnosticEvaluationRules
-  }
-  {
-    name: 'foundry-diagnostic-generated-tokens'
-    displayName: 'GeneratedTokens'
-    signalKind: 'AzureResourceMetric'
-    metricNamespace: foundryMetricNamespace
-    metricName: 'GeneratedTokens'
-    aggregationType: 'Total'
-    dataUnit: 'Count'
     timeGrain: 'PT5M'
     refreshInterval: 'PT5M'
     evaluationRules: foundryDiagnosticEvaluationRules
@@ -101,6 +87,8 @@ var foundryDynamicDiagnosticSignals = [
     signalKind: 'AzureResourceMetric'
     metricNamespace: foundryMetricNamespace
     metricName: 'AzureOpenAITTLTInMS'
+    dimension: 'ModelDeploymentName'
+    dimensionFilter: modelDeploymentName
     aggregationType: 'Average'
     dataUnit: 'MilliSeconds'
     timeGrain: 'PT5M'
@@ -113,68 +101,10 @@ var foundryDynamicDiagnosticSignals = [
     signalKind: 'AzureResourceMetric'
     metricNamespace: foundryMetricNamespace
     metricName: 'AzureOpenAINormalizedTTFTInMS'
+    dimension: 'ModelDeploymentName'
+    dimensionFilter: modelDeploymentName
     aggregationType: 'Average'
     dataUnit: 'MilliSeconds'
-    timeGrain: 'PT5M'
-    refreshInterval: 'PT5M'
-    evaluationRules: foundryDiagnosticEvaluationRules
-  }
-  {
-    name: 'foundry-diagnostic-prompt-tokens'
-    displayName: 'ProcessedPromptTokens'
-    signalKind: 'AzureResourceMetric'
-    metricNamespace: foundryMetricNamespace
-    metricName: 'ProcessedPromptTokens'
-    aggregationType: 'Total'
-    dataUnit: 'Count'
-    timeGrain: 'PT5M'
-    refreshInterval: 'PT5M'
-    evaluationRules: foundryDiagnosticEvaluationRules
-  }
-  {
-    name: 'foundry-diagnostic-blocked'
-    displayName: 'RAIRejectedRequests'
-    signalKind: 'AzureResourceMetric'
-    metricNamespace: foundryMetricNamespace
-    metricName: 'RAIRejectedRequests'
-    aggregationType: 'Total'
-    dataUnit: 'Count'
-    timeGrain: 'PT5M'
-    refreshInterval: 'PT5M'
-    evaluationRules: foundryDiagnosticEvaluationRules
-  }
-  {
-    name: 'foundry-diagnostic-harmful'
-    displayName: 'RAIHarmfulRequests'
-    signalKind: 'AzureResourceMetric'
-    metricNamespace: foundryMetricNamespace
-    metricName: 'RAIHarmfulRequests'
-    aggregationType: 'Total'
-    dataUnit: 'Count'
-    timeGrain: 'PT5M'
-    refreshInterval: 'PT5M'
-    evaluationRules: foundryDiagnosticEvaluationRules
-  }
-  {
-    name: 'foundry-diagnostic-safety-event'
-    displayName: 'RAISystemEvent'
-    signalKind: 'AzureResourceMetric'
-    metricNamespace: foundryMetricNamespace
-    metricName: 'RAISystemEvent'
-    aggregationType: 'Average'
-    dataUnit: 'Count'
-    timeGrain: 'PT5M'
-    refreshInterval: 'PT5M'
-    evaluationRules: foundryDiagnosticEvaluationRules
-  }
-  {
-    name: 'foundry-diagnostic-safety-volume'
-    displayName: 'RAITotalRequests'
-    signalKind: 'AzureResourceMetric'
-    metricNamespace: foundryMetricNamespace
-    metricName: 'RAITotalRequests'
-    aggregationType: 'Total'
-    dataUnit: 'Count'
     timeGrain: 'PT5M'
     refreshInterval: 'PT5M'
     evaluationRules: foundryDiagnosticEvaluationRules
@@ -188,10 +118,12 @@ var foundryDiagnosticSignals = concat(foundryDynamicDiagnosticSignals, [
     signalKind: 'AzureResourceMetric'
     metricNamespace: foundryMetricNamespace
     metricName: 'AzureOpenAIRequests'
+    dimension: 'ModelDeploymentName'
+    dimensionFilter: modelDeploymentName
     aggregationType: 'Total'
     dataUnit: 'Count'
     timeGrain: 'PT5M'
-    refreshInterval: 'PT5M'
+    refreshInterval: 'PT1M'
     evaluationRules: {
       unhealthyRule: {
         operator: 'GreaterThanOrEqual'
@@ -202,19 +134,9 @@ var foundryDiagnosticSignals = concat(foundryDynamicDiagnosticSignals, [
 ])
 var foundryDiagnosticGatedSignals = [
   {
-    name: 'foundry-diagnostic-token-transaction'
-    groupName: 'foundry-diagnostic-token-transaction-gate'
-    displayName: 'TokenTransaction with minimum traffic'
-  }
-  {
     name: 'foundry-diagnostic-time-between-tokens'
     groupName: 'foundry-diagnostic-time-between-tokens-gate'
     displayName: 'AzureOpenAINormalizedTBTInMS with minimum traffic'
-  }
-  {
-    name: 'foundry-diagnostic-generated-tokens'
-    groupName: 'foundry-diagnostic-generated-tokens-gate'
-    displayName: 'GeneratedTokens with minimum traffic'
   }
   {
     name: 'foundry-diagnostic-time-to-last-byte'
@@ -225,11 +147,6 @@ var foundryDiagnosticGatedSignals = [
     name: 'foundry-diagnostic-normalized-first-byte'
     groupName: 'foundry-diagnostic-normalized-first-byte-gate'
     displayName: 'AzureOpenAINormalizedTTFTInMS with minimum traffic'
-  }
-  {
-    name: 'foundry-diagnostic-prompt-tokens'
-    groupName: 'foundry-diagnostic-prompt-tokens-gate'
-    displayName: 'ProcessedPromptTokens with minimum traffic'
   }
 ]
 var foundryDiagnosticSignalAggregationGroups = [
@@ -242,6 +159,53 @@ var foundryDiagnosticSignalAggregationGroups = [
       signal.name
       foundryDiagnosticTrafficGateSignalName
     ]
+  }
+]
+var probeJobFailureQuery = format('''
+let EvaluationEnd = ago(2m);
+let EvaluationStart = EvaluationEnd - 5m;
+ContainerAppSystemLogs_CL
+    | where TimeGenerated between (EvaluationStart .. EvaluationEnd)
+    | extend
+        JobNameValue = tostring(column_ifexists("JobName_s", column_ifexists("JobName", ""))),
+        ExecutionNameValue = tostring(column_ifexists("ExecutionName_s", column_ifexists("ExecutionName", ""))),
+        ReplicaNameValue = tostring(column_ifexists("ReplicaName_s", column_ifexists("ReplicaName", ""))),
+        ReasonValue = tostring(column_ifexists("Reason_s", column_ifexists("Reason", ""))),
+        LogValue = tostring(column_ifexists("Log_s", column_ifexists("Log", "")))
+    | where JobNameValue == "{0}"
+    | extend
+        ReasonNormalized = tolower(ReasonValue),
+        LogNormalized = tolower(LogValue)
+    | extend ExitCode = toint(extract("exit code[^0-9-]*(-?[0-9]+)", 1, LogNormalized))
+    | where
+        ReasonNormalized in ("backofflimitexceeded", "deadlineexceeded", "executionfailed", "jobfailed", "failed")
+        or LogNormalized has "backofflimitexceeded"
+        or (
+            (ReasonNormalized == "containerterminated" or LogNormalized contains "container terminated")
+            and isnotnull(ExitCode)
+            and ExitCode != 0)
+    | extend FailureIdentity = case(
+        isnotempty(ExecutionNameValue), ExecutionNameValue,
+        isnotempty(ReplicaNameValue), ReplicaNameValue,
+        format_datetime(TimeGenerated, "yyyy-MM-ddTHH:mm"))
+    | summarize FailedExecutionCount = dcount(FailureIdentity)
+''', probeJobName)
+var probeJobDiagnosticSignals = [
+  {
+    name: 'synthetic-probe-job-failures'
+    displayName: 'Synthetic probe job failed executions'
+    signalKind: 'LogAnalyticsQuery'
+    queryText: probeJobFailureQuery
+    valueColumnName: 'FailedExecutionCount'
+    dataUnit: 'Count'
+    timeGrain: 'PT5M'
+    refreshInterval: 'PT1M'
+    evaluationRules: {
+      unhealthyRule: {
+        operator: 'GreaterThanOrEqual'
+        threshold: 1
+      }
+    }
   }
 ]
 var otelAvailabilitySignalName = 'otel-foundry-availability'
@@ -384,6 +348,30 @@ resource foundryDiagnosticsEntity 'Microsoft.CloudHealth/healthmodels/entities@2
   }
 }
 
+resource probeJobDiagnosticsEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-05-01-preview' = {
+  name: 'probe-job-diagnostics'
+  parent: healthModel
+  properties: {
+    displayName: 'Diagnostics - Synthetic Probe Job'
+    impact: 'Standard'
+    alerts: {}
+    icon: {
+      iconName: 'Analysis'
+    }
+    canvasPosition: {
+      x: 900
+      y: 420
+    }
+    signalGroups: {
+      azureLogAnalytics: {
+        authenticationSetting: authenticationSettingName
+        logAnalyticsWorkspaceResourceId: logAnalyticsWorkspaceResourceId
+        signals: probeJobDiagnosticSignals
+      }
+    }
+  }
+}
+
 // Signal aggregation groups require 2026-09-01-preview, which can be newer than the bundled Bicep type index.
 #disable-next-line BCP081
 resource otelAvailabilityEntity 'Microsoft.CloudHealth/healthmodels/entities@2026-09-01-preview' = {
@@ -508,6 +496,16 @@ resource diagnosticsMetricsRelationship 'Microsoft.CloudHealth/healthmodels/rela
   }
 }
 
-output configuredEntityCount int = 5
-output configuredSignalCount int = length(foundryDiagnosticSignals) + 2
-output configuredRelationshipCount int = 5
+resource diagnosticsProbeJobRelationship 'Microsoft.CloudHealth/healthmodels/relationships@2026-05-01-preview' = {
+  name: 'diagnostics-to-probe-job'
+  parent: healthModel
+  properties: {
+    parentEntityName: diagnosticsEntity.name
+    childEntityName: probeJobDiagnosticsEntity.name
+    displayName: 'Diagnostics - Synthetic Probe Job'
+  }
+}
+
+output configuredEntityCount int = 6
+output configuredSignalCount int = length(foundryDiagnosticSignals) + length(probeJobDiagnosticSignals) + 2
+output configuredRelationshipCount int = 6
